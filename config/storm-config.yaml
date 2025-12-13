@@ -1,0 +1,53 @@
+# ========================================
+# Storm 配置示例 - Node 2 & Node 3
+# 文件位置：/opt/storm/conf/storm.yaml
+# ========================================
+
+# 为了实现 Worker 物理隔离，需要在 Node 2 和 Node 3 上配置
+# 每个 Supervisor 开放 2 个 Worker 端口
+
+supervisor.slots.ports:
+    - 6700
+    - 6701
+
+# ========================================
+# 配置方法：
+# 
+# 1. 在 Node 2 上执行：
+#    ssh node2
+#    sudo vim /opt/storm/conf/storm.yaml
+#    添加上述配置
+# 
+# 2. 在 Node 3 上执行相同操作
+# 
+# 3. 重启 Supervisor：
+#    sudo systemctl restart storm-supervisor
+#    
+#    或手动重启：
+#    /opt/storm/bin/storm-supervisor stop
+#    /opt/storm/bin/storm-supervisor start
+# 
+# 4. 验证配置：
+#    访问 Storm UI: http://node1:8080
+#    检查 Supervisor 页面，应显示 4 个可用 Slots（2个节点 x 2个端口）
+# ========================================
+
+# ========================================
+# 完整 Storm 配置参考（可选）
+# ========================================
+
+# Nimbus 主机
+# storm.zookeeper.servers:
+#     - "node1"
+# 
+# nimbus.seeds: ["node1"]
+# 
+# storm.local.dir: "/opt/storm/data"
+# 
+# supervisor.slots.ports:
+#     - 6700
+#     - 6701
+# 
+# worker.childopts: "-Xmx1024m"
+# supervisor.childopts: "-Xmx256m"
+# nimbus.childopts: "-Xmx512m"

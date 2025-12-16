@@ -2,6 +2,7 @@
 # ========================================
 # Storm At-Least-Once 异常测试脚本
 # 在 Node 1 执行
+# 故障模拟：泊松分布（指数间隔）
 # ========================================
 
 echo "=== Storm At-Least-Once 异常测试 ==="
@@ -11,14 +12,15 @@ MESSAGE_COUNT=${1:-100000}  # 消息总数（默认 10万）
 SPEED=${2:-2000}             # 发送速率（默认 2000 msg/s）
 MAX_PENDING=${3:-1000}       # Spout Max Pending（默认 1000）
 FAULT_TYPE=${4:-none}        # 异常类型：none, spout, bolt-before, bolt-after, acker
-FAULT_RATE=${5:-0.01}        # 异常概率（默认 1%）
+FAULT_LAMBDA=${5:-10000}     # 泊松分布参数：平均每处理多少条消息发生一次故障（默认 10000）
 
 echo "测试配置："
 echo "  - 消息总数: $MESSAGE_COUNT"
 echo "  - 发送速率: $SPEED msg/s"
 echo "  - Spout Max Pending: $MAX_PENDING"
 echo "  - 异常类型: $FAULT_TYPE"
-echo "  - 异常概率: $FAULT_RATE"
+echo "  - Lambda (平均): $FAULT_LAMBDA 条消息"
+echo "  - 故障分布: 泊松过程（指数间隔）"
 echo ""
 
 # 0. 复位数据库
@@ -38,13 +40,13 @@ cd /opt/experiment
 # 根据异常类型设置 JVM 参数
 case $FAULT_TYPE in
   spout)
-    FAULT_OPTS="-Dfault.spout.enabled=true -Dfault.rate=$FAULT_RATE"
+    FAULT_OPTS="-Dfault.spout.enabled=true -Dfault.lambda=$FAULT_LAMBDA"
     ;;
   bolt-before)
-    FAULT_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=true -Dfault.rate=$FAULT_RATE"
+    FAULT_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=true -Dfault.lambda=$FAULT_LAMBDA"
     ;;
   bolt-after)
-    FAULT_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=false -Dfault.rate=$FAULT_RATE"
+    FAULT_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=false -Dfault.lambda=$FAULT_LAMBDA"
     ;;
   none)
     FAULT_OPTS=""

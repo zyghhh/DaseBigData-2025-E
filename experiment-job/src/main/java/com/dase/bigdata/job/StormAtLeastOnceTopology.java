@@ -29,7 +29,7 @@ import java.util.Properties;
  * - Acker 数量：1 (开启可靠性机制)
  * - Worker 数量：4 (物理隔离)
  * - Spout 并发：1
- * - Process Bolt 并发：2
+ * - Process Bolt 并发：1
  * - Sink Bolt 并发：1
  * - 业务处理延迟：2ms (模拟计算负载)
  * 
@@ -56,8 +56,8 @@ public class StormAtLeastOnceTopology {
         // [资源分配] Spout 并发=1
         builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 1);
 
-        // [资源分配] Process Bolt 并发=2
-        builder.setBolt("process-bolt", new ProcessBolt(), 2)
+        // [资源分配] Process Bolt 并发=1
+        builder.setBolt("process-bolt", new ProcessBolt(), 1)
                .shuffleGrouping("kafka-spout");
         
         // [资源分配] Sink Bolt 并发=1 (写入 Kafka storm_sink)
@@ -84,7 +84,7 @@ public class StormAtLeastOnceTopology {
         LOG.info("Num Ackers: 1");
         LOG.info("Num Workers: 4");
         LOG.info("Spout Parallelism: 1");
-        LOG.info("Process Bolt Parallelism: 2");
+        LOG.info("Process Bolt Parallelism: 1");
         LOG.info("Sink Bolt Parallelism: 1");
         LOG.info("Source Topic: source_data");
         LOG.info("Sink Topic: storm_sink");

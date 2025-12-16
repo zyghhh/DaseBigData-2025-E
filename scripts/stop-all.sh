@@ -13,7 +13,7 @@ echo "✓ 数据生成器已停止"
 # 2. 停止 Flink Jobs
 echo "[2/4] 停止 Flink Jobs..."
 cd /opt/flink
-JOBS=$(./bin/flink list 2>/dev/null | grep RUNNING | awk '{print $4}')
+JOBS=$(./bin/flink list 2>/dev/null | grep -E 'RUNNING|RESTARTING|FAILING|CREATED|CANCELING' | awk '{print $4}')
 for job_id in $JOBS; do
     ./bin/flink cancel $job_id
 done

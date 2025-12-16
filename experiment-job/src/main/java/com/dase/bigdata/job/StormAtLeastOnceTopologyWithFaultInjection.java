@@ -28,7 +28,7 @@ import java.util.Random;
  * 
  * 核心配置（隔离部署）：
  * - Spout → Worker 1 (并发=1)
- * - Process Bolt → Worker 2 (并发=2)
+ * - Process Bolt → Worker 2 (并发=1)
  * - Sink Bolt → Worker 3 (并发=1)
  * - Acker → Worker 4 (并发=1)
  * - spout.max.pending: 可配置（用于测试重复率）
@@ -37,7 +37,9 @@ import java.util.Random;
  * - fault.spout.enabled: 是否在 Spout 中注入异常
  * - fault.bolt.enabled: 是否在 Bolt 中注入异常
  * - fault.bolt.before.emit: Bolt 异常在 emit 之前（true）还是之后（false）
- * - fault.rate: 异常发生概率（0.0-1.0）
+ * - fault.lambda: 泊松分布参数，平均每处理多少条消息发生一次故障（默认 10000）
+ *                例如：lambda=5000 表示平均每5000条消息发生一次故障
+ *                故障间隔服从指数分布，更符合真实故障场景
  * 
  * 部署位置：Node 1 提交
  */
@@ -62,8 +64,8 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         // [资源分配] Spout 并发=1
         builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 1);
 
-        // [资源分配] Process Bolt 并发=2（充分利用 Worker 2）
-        builder.setBolt("process-bolt", new ProcessBoltWithFaultInjection(), 2)
+        // [资源分配] Process Bolt 并发=1
+        builder.setBolt("process-bolt", new ProcessBoltWithFaultInjection(), 1)
                .shuffleGrouping("kafka-spout");
         
         // [资源分配] Sink Bolt 并发=1（独立 Worker 3）
@@ -91,7 +93,7 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         LOG.info("Num Ackers: 1");
         LOG.info("Num Workers: 4 (Isolated Deployment)");
         LOG.info("Spout Parallelism: 1");
-        LOG.info("Process Bolt Parallelism: 2");
+        LOG.info("Process Bolt Parallelism: 1");
         LOG.info("Sink Bolt Parallelism: 1");
         LOG.info("Spout Max Pending: {}", maxPending);
         LOG.info("Source Topic: source_data");
@@ -100,7 +102,8 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         LOG.info("  - Spout Fault: {}", System.getProperty("fault.spout.enabled", "false"));
         LOG.info("  - Bolt Fault: {}", System.getProperty("fault.bolt.enabled", "false"));
         LOG.info("  - Bolt Fault Position: {}", System.getProperty("fault.bolt.before.emit", "false").equals("true") ? "Before Emit" : "After Emit");
-        LOG.info("  - Fault Rate: {}", System.getProperty("fault.rate", "0.0"));
+        LOG.info("  - Lambda (Avg): {} messages", System.getProperty("fault.lambda", "10000"));
+        LOG.info("  - Distribution: Poisson Process (Exponential Interval)");
         LOG.info("====================================");
 
         // 4. 提交拓扑
@@ -109,7 +112,7 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
     }
 
     /**
-     * 处理 Bolt - 支持异常注入
+     * 处理 Bolt - 支持异常注入（基于泊松分布）
      */
     public static class ProcessBoltWithFaultInjection extends BaseRichBolt {
         private static final Logger LOG = LoggerFactory.getLogger(ProcessBoltWithFaultInjection.class);
@@ -120,7 +123,8 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         // 异常注入配置
         private boolean faultEnabled = false;
         private boolean faultBeforeEmit = false;
-        private double faultRate = 0.0;
+        private double lambda = 10000.0;      // 泊松分布参数
+        private long nextFaultAt = -1;         // 下一次故障发生的消息序号
 
         @Override
         public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
@@ -129,12 +133,20 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
             // 读取异常注入配置
             this.faultEnabled = Boolean.parseBoolean(System.getProperty("fault.bolt.enabled", "false"));
             this.faultBeforeEmit = Boolean.parseBoolean(System.getProperty("fault.bolt.before.emit", "false"));
-            this.faultRate = Double.parseDouble(System.getProperty("fault.rate", "0.0"));
+            this.lambda = Double.parseDouble(System.getProperty("fault.lambda", "10000"));
+            
+            if (this.faultEnabled) {
+                // 初始化第一个故障点（基于泊松分布）
+                this.nextFaultAt = generateNextFaultInterval();
+            }
             
             LOG.info("ProcessBolt initialized with fault injection config:");
             LOG.info("  - Fault Enabled: {}", faultEnabled);
             LOG.info("  - Fault Before Emit: {}", faultBeforeEmit);
-            LOG.info("  - Fault Rate: {}", faultRate);
+            LOG.info("  - Lambda (Avg Interval): {}", lambda);
+            if (this.faultEnabled) {
+                LOG.info("  - First fault scheduled at message #{}", this.nextFaultAt);
+            }
         }
 
         @Override
@@ -183,10 +195,35 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         }
         
         /**
-         * 根据配置的概率决定是否注入异常
+         * 判断当前消息是否应该注入故障（基于泊松分布）
          */
         private boolean shouldInjectFault() {
-            return random.nextDouble() < faultRate;
+            if (!faultEnabled) {
+                return false;
+            }
+
+            // 检查是否到达故障点
+            if (processedCount >= nextFaultAt) {
+                // 生成下一个故障点
+                nextFaultAt = processedCount + generateNextFaultInterval();
+                LOG.info("Fault triggered at message #{}, next fault scheduled at #{}", 
+                         processedCount, nextFaultAt);
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * 基于泊松分布生成下一次故障的时间间隔
+         * 使用逆变换采样法：X = -λ * ln(U)，其中 U ~ Uniform(0,1)
+         */
+        private long generateNextFaultInterval() {
+            // 生成 (0, 1) 区间的均匀随机数
+            double u = random.nextDouble();
+            // 泊松过程的事件间隔服从指数分布
+            long interval = (long) (-lambda * Math.log(u));
+            // 至少间隔 1 条消息
+            return Math.max(1, interval);
         }
 
         @Override

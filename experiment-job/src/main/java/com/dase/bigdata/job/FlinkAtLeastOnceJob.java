@@ -1,12 +1,15 @@
 package com.dase.bigdata.job;
 
 import com.alibaba.fastjson.JSONObject;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,38 +45,37 @@ public class FlinkAtLeastOnceJob {
         // 3. [资源对齐] 保持并发度与 Slot 一致
         env.setParallelism(4);
 
-        // 4. Kafka Source 配置
+        // 4. Kafka Source 配置（使用新 API）
         Properties sourceProps = new Properties();
-        sourceProps.setProperty("bootstrap.servers", "node1:9092,node2:9092,node3:9092");
-        sourceProps.setProperty("group.id", "flink-exp-group");
         // [实验关键] 自动提交 offset (配合 Checkpoint)
         sourceProps.setProperty("enable.auto.commit", "true");
         sourceProps.setProperty("auto.commit.interval.ms", "5000");
 
-        FlinkKafkaConsumer<String> consumer = new FlinkKafkaConsumer<>(
-            "source_data", 
-            new SimpleStringSchema(), 
-            sourceProps
-        );
-        // 从最早的记录开始读取（首次运行）
-        // consumer.setStartFromEarliest();
+        KafkaSource<String> source = KafkaSource.<String>builder()
+            .setBootstrapServers("node1:9092,node2:9092,node3:9092")
+            .setTopics("source_data")
+            .setGroupId("flink-exp-group")
+            .setProperties(sourceProps)
+            // [实验关键] 从最早的记录开始读取（对齐 Storm earliest 配置）
+            .setStartingOffsets(OffsetsInitializer.earliest())
+            .setValueOnlyDeserializer(new SimpleStringSchema())
+            .build();
 
-        // 5. Kafka Sink 配置
-        Properties sinkProps = new Properties();
-        sinkProps.setProperty("bootstrap.servers", "node1:9092,node2:9092,node3:9092");
-        
-        FlinkKafkaProducer<String> producer = new FlinkKafkaProducer<>(
-            "flink_sink",
-            new SimpleStringSchema(),
-            sinkProps
-        );
+        // 5. Kafka Sink 配置（使用新 API）
+        KafkaSink<String> sink = KafkaSink.<String>builder()
+            .setBootstrapServers("node1:9092,node2:9092,node3:9092")
+            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                .setTopic("flink_sink")
+                .setValueSerializationSchema(new SimpleStringSchema())
+                .build()
+            )
+            .build();
 
         // 6. 构建数据流
-        env.addSource(consumer)
-           .name("Kafka Source")
+        env.fromSource(source, WatermarkStrategy.noWatermarks(), "Kafka Source")
            .map(new ProcessMapFunction())
            .name("Business Logic (2ms delay)")
-           .addSink(producer)
+           .sinkTo(sink)
            .name("Kafka Sink");
 
         LOG.info("====================================");

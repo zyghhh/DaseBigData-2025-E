@@ -149,7 +149,7 @@ SELECT
     FROM_UNIXTIME(FLOOR(out_time/1000)) AS 时间点,
     COUNT(*) AS 每秒消息数
 FROM metrics
-GROUP BY job_type, FLOOR(out_time/1000)
+GROUP BY job_type, FLOOR(out_time/1000), FROM_UNIXTIME(FLOOR(out_time/1000))
 ORDER BY FLOOR(out_time/1000) DESC
 LIMIT 100;
 
@@ -219,6 +219,7 @@ ORDER BY snapshot_time DESC;
 DELIMITER //
 
 -- 6.1 实验复位存储过程（保留快照历史）
+DROP PROCEDURE IF EXISTS sp_reset_experiment;
 CREATE PROCEDURE sp_reset_experiment()
 BEGIN
     TRUNCATE TABLE metrics;
@@ -226,6 +227,7 @@ BEGIN
 END //
 
 -- 6.2 创建统计快照存储过程
+DROP PROCEDURE IF EXISTS sp_create_snapshot;
 CREATE PROCEDURE sp_create_snapshot(IN p_note VARCHAR(200))
 BEGIN
     INSERT INTO stats_snapshots (
@@ -309,6 +311,7 @@ BEGIN
 END //
 
 -- 6.3 查询指定任务的重复消息详情
+DROP PROCEDURE IF EXISTS sp_get_duplicates;
 CREATE PROCEDURE sp_get_duplicates(IN p_job_type VARCHAR(20))
 BEGIN
     SELECT 
@@ -323,6 +326,7 @@ BEGIN
 END //
 
 -- 6.4 查询延迟分布（按区间统计）
+DROP PROCEDURE IF EXISTS sp_get_latency_distribution;
 CREATE PROCEDURE sp_get_latency_distribution(IN p_job_type VARCHAR(20))
 BEGIN
     SELECT 
@@ -358,7 +362,10 @@ DELIMITER ;
 --     ('flink', 1, 1702444800000, 1702444800050, 50, 1),
 --     ('storm', 1, 1702444800000, 1702444800055, 55, 1);
 
+DELIMITER //
+
 -- 6.5 对比两个快照的差异
+DROP PROCEDURE IF EXISTS sp_compare_snapshots;
 CREATE PROCEDURE sp_compare_snapshots(IN p_snapshot_id1 BIGINT, IN p_snapshot_id2 BIGINT)
 BEGIN
     SELECT 
@@ -384,6 +391,7 @@ BEGIN
 END //
 
 -- 6.6 查询最新N个快照的平均统计
+DROP PROCEDURE IF EXISTS sp_get_avg_stats;
 CREATE PROCEDURE sp_get_avg_stats(IN p_job_type VARCHAR(20), IN p_last_n INT)
 BEGIN
     SELECT 

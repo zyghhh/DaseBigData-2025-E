@@ -63,40 +63,88 @@ for i in $(seq 1 $REPEAT_TIMES); do
         kill-tm)
             echo -e "${RED}[${INJECT_TIME}] Kill TaskManager...${NC}"
             
-            # 查找 TaskManager 进程
-            TM_PIDS=$(jps | grep TaskManagerRunner | awk '{print $1}')
+            # 定义 Worker 节点列表
+            WORKER_NODES=("node2" "node3")
             
-            if [ -z "$TM_PIDS" ]; then
-                echo -e "${YELLOW}警告: 未找到 TaskManager 进程${NC}"
+            # 收集所有节点的 TaskManager 信息
+            declare -a TM_LIST
+            for node in "${WORKER_NODES[@]}"; do
+                echo "正在查找 $node 上的 TaskManager..."
+                TM_PIDS=$(ssh $node "jps | grep TaskManagerRunner | awk '{print \$1}'" 2>/dev/null)
+                
+                if [ -n "$TM_PIDS" ]; then
+                    for pid in $TM_PIDS; do
+                        TM_LIST+=("$node:$pid")
+                        echo "  发现: $node (PID: $pid)"
+                    done
+                fi
+            done
+            
+            if [ ${#TM_LIST[@]} -eq 0 ]; then
+                echo -e "${YELLOW}警告: 未在任何节点找到 TaskManager 进程${NC}"
             else
                 # 随机选择一个 TM
-                TM_PID=$(echo "$TM_PIDS" | shuf -n 1)
-                echo "Target PID: $TM_PID"
+                TARGET_INDEX=$((RANDOM % ${#TM_LIST[@]}))
+                TARGET_INFO="${TM_LIST[$TARGET_INDEX]}"
+                TARGET_NODE=$(echo $TARGET_INFO | cut -d':' -f1)
+                TM_PID=$(echo $TARGET_INFO | cut -d':' -f2)
+                
+                echo ""
+                echo -e "${YELLOW}目标节点: $TARGET_NODE${NC}"
+                echo -e "${YELLOW}目标 PID: $TM_PID${NC}"
                 
                 # 记录故障
-                echo "$INJECT_TIME,kill-tm,$TM_PID" >> /opt/experiment/fault-injection-log.csv
+                echo "$INJECT_TIME,kill-tm,$TARGET_NODE,$TM_PID" >> /opt/experiment/fault-injection-log.csv
                 
-                # Kill 进程
-                kill -9 $TM_PID
-                echo -e "${GREEN}✓ TaskManager (PID: $TM_PID) 已被 Kill${NC}"
+                # 远程 Kill 进程
+                ssh $TARGET_NODE "kill -9 $TM_PID"
+                echo -e "${GREEN}✓ TaskManager (Node: $TARGET_NODE, PID: $TM_PID) 已被 Kill${NC}"
                 
-                # [Standalone 模式] 手动重启 TaskManager
-                echo "检测到 Standalone 模式，正在重启 TaskManager..."
+                # [Standalone 模式] 远程重启 TaskManager
+                echo "检测到 Standalone 模式，正在 $TARGET_NODE 上重启 TaskManager..."
                 sleep 3  # 等待进程完全退出
                 
-                # 在后台重启 TaskManager
-                nohup /opt/flink/bin/taskmanager.sh start > /dev/null 2>&1 &
+                # 远程重启 TaskManager
+                ssh $TARGET_NODE "nohup /opt/flink/bin/taskmanager.sh start > /dev/null 2>&1 &"
                 
                 # 等待 TaskManager 注册到 JobManager
                 echo "等待 TaskManager 重新注册（约 10 秒）..."
                 sleep 10
                 
                 # 验证是否重启成功
-                NEW_TM_COUNT=$(jps | grep TaskManagerRunner | wc -l)
+                NEW_TM_COUNT=$(ssh $TARGET_NODE "jps | grep TaskManagerRunner | wc -l")
                 if [ $NEW_TM_COUNT -gt 0 ]; then
-                    echo -e "${GREEN}✓ TaskManager 已成功重启${NC}"
+                    echo -e "${GREEN}✓ $TARGET_NODE 上的 TaskManager 已成功重启${NC}"
                 else
-                    echo -e "${RED}✗ TaskManager 重启失败，请检查日志${NC}"
+                    echo -e "${RED}✗ $TARGET_NODE 上的 TaskManager 重启失败，请检查日志${NC}"
+                fi
+                
+                # 等待 Flink Job 恢复到 RUNNING 状态
+                echo -e "${BLUE}等待 Flink Job 恢复正常...${NC}"
+                MAX_WAIT=60  # 最多等待60秒
+                WAIT_COUNT=0
+                
+                while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+                    JOB_STATE=$(/opt/flink/bin/flink list 2>/dev/null | grep -E 'RUNNING' | wc -l)
+                    
+                    if [ $JOB_STATE -gt 0 ]; then
+                        echo -e "${GREEN}✓ Flink Job 已恢复到 RUNNING 状态${NC}"
+                        
+                        # 额外等待10秒，确保数据流稳定
+                        echo "等待数据流稳定（10秒）..."
+                        sleep 10
+                        break
+                    else
+                        echo -n "."
+                        sleep 2
+                        WAIT_COUNT=$((WAIT_COUNT + 2))
+                    fi
+                done
+                
+                if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+                    echo -e "${RED}✗ Job 恢复超时，请检查 Flink WebUI${NC}"
+                    echo "当前 Job 状态:"
+                    /opt/flink/bin/flink list 2>/dev/null
                 fi
             fi
             ;;
@@ -165,6 +213,29 @@ for i in $(seq 1 $REPEAT_TIMES); do
             show_help
             ;;
     esac
+    
+    # 验证系统状态后再创建快照
+    echo -e "${BLUE}验证系统状态...${NC}"
+    
+    # 1. 检查 Job 状态
+    RUNNING_JOBS=$(/opt/flink/bin/flink list 2>/dev/null | grep RUNNING | wc -l)
+    if [ $RUNNING_JOBS -eq 0 ]; then
+        echo -e "${RED}警告: 没有运行中的 Job，快照可能不准确${NC}"
+    else
+        echo -e "${GREEN}✓ 检测到 $RUNNING_JOBS 个运行中的 Job${NC}"
+    fi
+    
+    # 2. 检查 Metrics Collector 是否正在写入数据
+    BEFORE_COUNT=$(mysql -h node1 -u exp_user -ppassword stream_experiment -se "SELECT COUNT(*) FROM metrics WHERE framework='Flink';" 2>/dev/null)
+    sleep 3
+    AFTER_COUNT=$(mysql -h node1 -u exp_user -ppassword stream_experiment -se "SELECT COUNT(*) FROM metrics WHERE framework='Flink';" 2>/dev/null)
+    
+    if [ $AFTER_COUNT -gt $BEFORE_COUNT ]; then
+        NEW_MSGS=$((AFTER_COUNT - BEFORE_COUNT))
+        echo -e "${GREEN}✓ 数据流正常，3秒新增 $NEW_MSGS 条消息${NC}"
+    else
+        echo -e "${YELLOW}警告: 数据流可能已停止，请检查 Metrics Collector${NC}"
+    fi
     
     # 创建故障后快照
     echo -e "${GREEN}创建故障后快照...${NC}"

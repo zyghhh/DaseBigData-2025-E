@@ -5,6 +5,7 @@
 # 支持: Kill Worker、Kill Nimbus、网络隔离 Worker
 # ========================================
 
+# TODO  ⚠ 警告: 未找到 Storm Worker 进程
 FAULT_TYPE=${1:-help}
 REPEAT_TIMES=${2:-1}
 INTERVAL_SEC=${3:-30}
@@ -64,19 +65,75 @@ for i in $(seq 1 $REPEAT_TIMES); do
     case $FAULT_TYPE in
         kill-worker)
             echo -e "${RED}[${INJECT_TIME}] Kill Storm Worker...${NC}"
-            # 查找 Worker 进程
-            WORKER_PIDS=$(ps aux | grep storm | grep worker | grep -v grep | awk '{print $2}')
-            if [ -z "$WORKER_PIDS" ]; then
-                echo -e "${YELLOW}警告: 未找到 Storm Worker 进程${NC}"
+            
+            # 定义 Worker 节点列表
+            WORKER_NODES=("node2" "node3")
+            
+            # 收集所有节点的 Worker 信息
+            declare -a WORKER_LIST
+            for node in "${WORKER_NODES[@]}"; do
+                echo "正在查找 $node 上的 Storm Worker..."
+                WORKER_PIDS=$(ssh $node "ps aux | grep storm | grep worker | grep -v grep | awk '{print \$2}'" 2>/dev/null)
+                
+                if [ -n "$WORKER_PIDS" ]; then
+                    for pid in $WORKER_PIDS; do
+                        WORKER_LIST+=("$node:$pid")
+                        echo "  发现: $node (PID: $pid)"
+                    done
+                fi
+            done
+            
+            if [ ${#WORKER_LIST[@]} -eq 0 ]; then
+                echo -e "${YELLOW}警告: 未在任何节点找到 Storm Worker 进程${NC}"
             else
                 # 随机选择一个 Worker
-                TARGET_PID=$(echo "$WORKER_PIDS" | shuf -n 1)
-                echo "Target Worker PID: $TARGET_PID"
-                echo "$INJECT_TIME,kill-worker,$TARGET_PID" >> "$LOG_FILE"
-                kill -9 $TARGET_PID
-                echo -e "${GREEN}✓ Worker (PID: $TARGET_PID) 已被 Kill${NC}"
-                echo "等待 Storm 重新调度任务..."
-                sleep 10
+                TARGET_INDEX=$((RANDOM % ${#WORKER_LIST[@]}))
+                TARGET_INFO="${WORKER_LIST[$TARGET_INDEX]}"
+                TARGET_NODE=$(echo $TARGET_INFO | cut -d':' -f1)
+                TARGET_PID=$(echo $TARGET_INFO | cut -d':' -f2)
+                
+                echo ""
+                echo -e "${YELLOW}目标节点: $TARGET_NODE${NC}"
+                echo -e "${YELLOW}目标 PID: $TARGET_PID${NC}"
+                
+                # 记录故障
+                echo "$INJECT_TIME,kill-worker,$TARGET_NODE,$TARGET_PID" >> "$LOG_FILE"
+                
+                # 远程 Kill 进程
+                ssh $TARGET_NODE "kill -9 $TARGET_PID"
+                echo -e "${GREEN}✓ Worker (Node: $TARGET_NODE, PID: $TARGET_PID) 已被 Kill${NC}"
+                
+                # 等待 Storm Nimbus 重新调度 Worker
+                echo -e "${BLUE}等待 Storm 自动重新调度 Worker...${NC}"
+                MAX_WAIT=60  # 最多等待60秒
+                WAIT_COUNT=0
+                
+                while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+                    # 检查该节点上是否有新的 Worker 进程
+                    NEW_WORKER_COUNT=$(ssh $TARGET_NODE "ps aux | grep storm | grep worker | grep -v grep | wc -l" 2>/dev/null)
+                    
+                    if [ $NEW_WORKER_COUNT -gt 0 ]; then
+                        echo -e "${GREEN}✓ $TARGET_NODE 上的 Worker 已重新启动${NC}"
+                        
+                        # 额外等待10秒，确保任务分配完成
+                        echo "等待任务分配完成（10秒）..."
+                        sleep 10
+                        break
+                    else
+                        echo -n "."
+                        sleep 2
+                        WAIT_COUNT=$((WAIT_COUNT + 2))
+                    fi
+                done
+                
+                if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+                    echo -e "${RED}✗ Worker 重启超时，请检查 Storm UI${NC}"
+                    echo "当前 Worker 状态:"
+                    for node in "${WORKER_NODES[@]}"; do
+                        COUNT=$(ssh $node "ps aux | grep storm | grep worker | grep -v grep | wc -l" 2>/dev/null)
+                        echo "  $node: $COUNT 个 Worker 进程"
+                    done
+                fi
             fi
             ;;
 
@@ -114,6 +171,34 @@ for i in $(seq 1 $REPEAT_TIMES); do
             show_help
             ;;
     esac
+    
+    # 验证系统状态后再创建快照
+    echo -e "${BLUE}验证系统状态...${NC}"
+    
+    # 1. 检查 Worker 进程数量
+    TOTAL_WORKERS=0
+    for node in "node2" "node3"; do
+        WORKER_COUNT=$(ssh $node "ps aux | grep storm | grep worker | grep -v grep | wc -l" 2>/dev/null)
+        TOTAL_WORKERS=$((TOTAL_WORKERS + WORKER_COUNT))
+    done
+    
+    if [ $TOTAL_WORKERS -eq 0 ]; then
+        echo -e "${RED}警告: 没有运行中的 Worker，快照可能不准确${NC}"
+    else
+        echo -e "${GREEN}✓ 检测到 $TOTAL_WORKERS 个 Worker 进程运行中${NC}"
+    fi
+    
+    # 2. 检查 Metrics Collector 是否正在写入数据
+    BEFORE_COUNT=$(mysql -h node1 -u exp_user -ppassword stream_experiment -se "SELECT COUNT(*) FROM metrics WHERE framework='Storm';" 2>/dev/null)
+    sleep 3
+    AFTER_COUNT=$(mysql -h node1 -u exp_user -ppassword stream_experiment -se "SELECT COUNT(*) FROM metrics WHERE framework='Storm';" 2>/dev/null)
+    
+    if [ $AFTER_COUNT -gt $BEFORE_COUNT ]; then
+        NEW_MSGS=$((AFTER_COUNT - BEFORE_COUNT))
+        echo -e "${GREEN}✓ 数据流正常，3秒新增 $NEW_MSGS 条消息${NC}"
+    else
+        echo -e "${YELLOW}警告: 数据流可能已停止，请检查 Metrics Collector${NC}"
+    fi
     
     # 创建故障后快照
     echo -e "${GREEN}创建故障后快照...${NC}"

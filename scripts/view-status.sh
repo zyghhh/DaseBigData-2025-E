@@ -59,7 +59,7 @@ echo -e "${YELLOW}【3. 吞吐量趋势（最近10秒）】${NC}"
 echo ""
 
 mysql -h node1 -u exp_user -ppassword stream_experiment -e "
-SELECT * FROM v_throughput_per_second LIMIT 10;
+SELECT * FROM v_throughput_per_second LIMIT 100;
 " 2>/dev/null
 
 echo ""

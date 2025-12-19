@@ -162,7 +162,7 @@ chmod +x *.sh
 *[2节点 4 TaskManager，消耗 6.4G]*
 
 - **Source**：从 `source_data` 读 Kafka 消息
-- **Processing**：模拟 2ms 业务延迟，打上 `process_time` 等
+- **Processing**：模拟 1ms 业务延迟，打上 `process_time` 等
 - **Sink**：写入 `flink_sink` Kafka Topic
 
 #### Storm Topology 内部拓扑（逻辑组件）
@@ -170,7 +170,7 @@ chmod +x *.sh
 *[2节点 4 worker，消耗 6.4G]*
 
 - **KafkaSpout**：从 `source_data` 读 Kafka 消息
-- **ProcessBolt**：模拟 2ms 业务延迟，打上 `process_time` 等
+- **ProcessBolt**：模拟 1ms 业务延迟，打上 `process_time` 等
 - **KafkaSinkBolt**：写入 `storm_sink` Kafka Topic
 - **Acker**：Storm 内部的可靠性组件（1 个 acker，独立 worker）
 

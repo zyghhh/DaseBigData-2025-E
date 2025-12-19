@@ -31,7 +31,7 @@ import java.util.Properties;
  * - Spout 并发：1
  * - Process Bolt 并发：1
  * - Sink Bolt 并发：1
- * - 业务处理延迟：2ms (模拟计算负载)
+ * - 业务处理延迟：1ms (模拟计算负载)
  * 
  * 部署位置：Node 1 提交
  */
@@ -74,7 +74,7 @@ public class StormAtLeastOnceTopology {
         conf.setNumWorkers(4);
         
         // 超时设置 60s
-        conf.setMessageTimeoutSecs(60);
+        conf.setMessageTimeoutSecs(30);
         
         // 性能调优
         conf.put(Config.TOPOLOGY_MAX_SPOUT_PENDING, 1000);
@@ -116,7 +116,7 @@ public class StormAtLeastOnceTopology {
                 JSONObject json = JSONObject.parseObject(value);
                 
                 // [负载模拟] 强制休眠 2ms
-                Thread.sleep(2);
+                Thread.sleep(1);
                 
                 // 打上处理时间
                 json.put("process_time", System.currentTimeMillis());

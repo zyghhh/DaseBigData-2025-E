@@ -22,7 +22,7 @@ import java.util.Properties;
  * - Checkpoint 间隔：5秒
  * - Checkpoint 模式：AT_LEAST_ONCE
  * - 并发度：4 (对齐 TaskManager Slots)
- * - 业务处理延迟：2ms (模拟计算负载)
+ * - 业务处理延迟：1ms (模拟计算负载)
  * 
  * 部署位置：Node 1 提交
  */
@@ -48,7 +48,7 @@ public class FlinkAtLeastOnceJob {
         // 4. Kafka Source 配置（使用新 API）
         Properties sourceProps = new Properties();
         // [实验关键] 自动提交 offset (配合 Checkpoint)
-        sourceProps.setProperty("enable.auto.commit", "true");
+        sourceProps.setProperty("enable.auto.commit", "false");
         sourceProps.setProperty("auto.commit.interval.ms", "5000");
 
         KafkaSource<String> source = KafkaSource.<String>builder()
@@ -104,7 +104,7 @@ public class FlinkAtLeastOnceJob {
                 JSONObject json = JSONObject.parseObject(value);
                 
                 // [负载模拟] 强制休眠 2ms
-                Thread.sleep(2);
+                Thread.sleep(1);
                 
                 // 打上处理时间
                 json.put("process_time", System.currentTimeMillis());

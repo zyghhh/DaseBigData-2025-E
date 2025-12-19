@@ -162,7 +162,7 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
                 }
                 
                 // [负载模拟] 强制休眠 2ms
-                Thread.sleep(2);
+                Thread.sleep(1);
                 
                 // 打上处理时间
                 json.put("process_time", System.currentTimeMillis());

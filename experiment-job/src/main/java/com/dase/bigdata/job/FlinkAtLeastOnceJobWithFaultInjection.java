@@ -23,7 +23,7 @@ import java.util.Random;
  * - Checkpoint 间隔：5秒
  * - Checkpoint 模式：AT_LEAST_ONCE
  * - 并发度：4
- * - 业务处理延迟：2ms
+ * - 业务处理延迟：1ms
  *
  * 额外支持的故障注入参数（通过 main(args) 传入）：
  * - args[0] faultType: "none" / "before" / "after"
@@ -158,7 +158,7 @@ public class FlinkAtLeastOnceJobWithFaultInjection {
                 }
 
                 // [负载模拟] 强制休眠 2ms
-                Thread.sleep(2);
+                Thread.sleep(1);
 
                 // 打上处理时间和标识
                 json.put("process_time", System.currentTimeMillis());

@@ -115,8 +115,8 @@ public class StormAtLeastOnceTopology {
                 String value = input.getStringByField("value");
                 JSONObject json = JSONObject.parseObject(value);
                 
-                // [负载模拟] 强制休眠 0.1ms（提高吐吐量）
-                Thread.sleep(0, 100000);  // 0ms + 100000ns = 0.1ms
+                // [负载模拟] 强制休眠 1ms
+                Thread.sleep(1);
                 
                 // 打上处理时间
                 json.put("process_time", System.currentTimeMillis());

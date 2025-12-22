@@ -30,7 +30,7 @@ echo "✓ 数据库已复位"
 
 # 1. 启动数据生成器（固定数量模式）
 echo "[1/4] 启动数据生成器（Node 2）- 固定 $MESSAGE_COUNT 条消息..."
-ssh node2 "cd /opt/experiment && nohup java -Xmx512m -Dapp.name=DataGenerator -jar data-generator.jar source_data $SPEED $MESSAGE_COUNT > generator.log 2>&1 &" && sleep 1
+ssh node2 "cd /opt/experiment && nohup java -Xmx512m -Dapp.name=DataGenerator -jar data-generator.jar source_data $SPEED $MESSAGE_COUNT > generator.log 2>&1 &"
 echo "✓ 数据生成器已启动（将生成 $MESSAGE_COUNT 条消息后自动停止）"
 
 # 2. 提交 Storm Topology（带异常注入配置）

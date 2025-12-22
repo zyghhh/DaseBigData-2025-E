@@ -158,8 +158,8 @@ public class FlinkAtLeastOnceJobWithFaultInjection {
                     throw new RuntimeException("Injected fault before business logic");
                 }
 
-                // [负载模拟] 强制休眠 0.1ms
-                Thread.sleep(0, 100000);  // 0ms + 100000ns = 0.1ms
+                // [负载模拟] 强制休眠 1ms
+                Thread.sleep(1);
 
                 // 打上处理时间和标识
                 json.put("process_time", System.currentTimeMillis());

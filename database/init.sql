@@ -131,15 +131,44 @@ GROUP BY m.job_type;
 CREATE OR REPLACE VIEW v_experiment_stats AS
 SELECT 
     job_type AS 任务类型,
-    COUNT(*) AS 测试数据总量,
+    COUNT(*) AS 处理总消息数,
     COUNT(DISTINCT msg_id) AS 唯一消息数,
-    SUM(process_count - 1) AS 数据重复次数,
-    COUNT(DISTINCT CASE WHEN process_count > 1 THEN msg_id END) AS 出现重复的消息数,
     ROUND(COUNT(DISTINCT CASE WHEN process_count > 1 THEN msg_id END) / COUNT(DISTINCT msg_id) * 100, 2) AS 重复消息占比_pct,
     ROUND(AVG(latency), 2) AS 平均延迟_ms,
     MIN(latency) AS 最小延迟_ms,
-    MAX(latency) AS 最大延迟_ms
-FROM metrics
+    MAX(latency) AS 最大延迟_ms,
+    -- P95 延迟
+    (
+        SELECT ROUND(latency, 2) 
+        FROM (
+            SELECT latency, 
+                   ROW_NUMBER() OVER (ORDER BY latency) AS rn,
+                   COUNT(*) OVER () AS total
+            FROM metrics m2
+            WHERE m2.job_type = m1.job_type
+        ) ranked
+        WHERE rn = FLOOR(total * 0.95)
+        LIMIT 1
+    ) AS P95延迟_ms,
+    -- P99 延迟
+    (
+        SELECT ROUND(latency, 2) 
+        FROM (
+            SELECT latency, 
+                   ROW_NUMBER() OVER (ORDER BY latency) AS rn,
+                   COUNT(*) OVER () AS total
+            FROM metrics m2
+            WHERE m2.job_type = m1.job_type
+        ) ranked
+        WHERE rn = FLOOR(total * 0.99)
+        LIMIT 1
+    ) AS P99延迟_ms,
+    COUNT(DISTINCT CASE WHEN process_count > 1 THEN msg_id END) AS 出现重复的消息数,
+    ROUND(COUNT(DISTINCT CASE WHEN process_count > 1 THEN msg_id END) / COUNT(DISTINCT msg_id) * 100, 4) AS 重复率_pct,
+    MAX(process_count) AS 最大重复次数,
+    SUM(process_count - 1) AS 数据重复次数,
+    ROUND(COUNT(*) / NULLIF((MAX(out_time) - MIN(out_time)) / 1000.0, 0), 2) AS 吞吐量_msg_s
+FROM metrics m1
 GROUP BY job_type;
 
 -- 5.5 实时吞吐量视图（按秒统计）
@@ -200,17 +229,22 @@ SELECT
 FROM metrics m1
 GROUP BY job_type;
 
--- 5.7 快照历史对比视图
+-- 5.7 快照历史对比视图（完整版）
 CREATE OR REPLACE VIEW v_snapshot_history AS
 SELECT 
     id AS 快照ID,
     snapshot_time AS 快照时间,
     job_type AS 任务类型,
-    total_messages AS 总消息数,
-    avg_latency AS 平均延迟_ms,
-    p99_latency AS P99延迟_ms,
-    duplicate_rate AS 重复率_pct,
-    throughput_per_sec AS 吞吐量_msg_s,
+    total_messages AS 处理总消息数,
+    ROUND(avg_latency, 2) AS 平均延迟_ms,
+    min_latency AS 最小延迟_ms,
+    max_latency AS 最大延迟_ms,
+    ROUND(p95_latency, 2) AS P95延迟_ms,
+    ROUND(p99_latency, 2) AS P99延迟_ms,
+    ROUND(duplicate_rate, 4) AS 重复率_pct,
+    max_process_count AS 最大重复次数,
+    ROUND(throughput_per_sec, 2) AS 吞吐量_msg_s,
+    time_window_sec AS 统计时窗_s,
     note AS 备注
 FROM stats_snapshots
 ORDER BY snapshot_time DESC;
@@ -226,7 +260,7 @@ BEGIN
     SELECT 'Experiment data reset successfully! (Snapshots preserved)' AS message;
 END //
 
--- 6.2 创建统计快照存储过程
+-- 6.2 创建统计快照存储过程（增强版）
 DROP PROCEDURE IF EXISTS sp_create_snapshot;
 CREATE PROCEDURE sp_create_snapshot(IN p_note VARCHAR(200))
 BEGIN
@@ -306,8 +340,24 @@ BEGIN
     FROM metrics m1
     GROUP BY job_type;
     
-    SELECT CONCAT('Snapshot created at ', NOW(), ' - ', p_note) AS message;
-    SELECT * FROM v_snapshot_history LIMIT 10;
+    -- 显示创建成功消息
+    SELECT CONCAT('快照创建成功 - ', p_note) AS 消息;
+    
+    -- 显示完整的快照统计信息
+    SELECT 
+        job_type AS 任务类型,
+        total_messages AS 处理总消息数,
+        ROUND(avg_latency, 2) AS 平均延迟_ms,
+        min_latency AS 最小延迟_ms,
+        max_latency AS 最大延迟_ms,
+        ROUND(p95_latency, 2) AS P95延迟_ms,
+        ROUND(p99_latency, 2) AS P99延迟_ms,
+        ROUND(duplicate_rate, 4) AS 重复率_pct,
+        max_process_count AS 最大重复次数,
+        ROUND(throughput_per_sec, 2) AS 吞吐量_msg_s
+    FROM stats_snapshots
+    WHERE snapshot_time = (SELECT MAX(snapshot_time) FROM stats_snapshots)
+    ORDER BY job_type;
 END //
 
 -- 6.3 查询指定任务的重复消息详情

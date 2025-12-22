@@ -62,7 +62,7 @@ echo "✓ Flink Job 已提交"
 
 # 3. 启动指标收集器（Node 3）
 echo "[3/4] 启动指标收集器（Node 3）..."
-ssh node3 "cd /opt/experiment && nohup java -Xmx512m -Dapp.name=MetricsCollector -jar metrics-collector.jar flink_sink flink-fault-$FAULT_TYPE > collector-flink-fault.log 2>&1 &" && sleep 1
+ssh node3 "cd /opt/experiment && nohup java -Xmx512m -Dapp.name=MetricsCollector -jar metrics-collector.jar flink_sink flink-fault-$FAULT_TYPE > collector-flink-fault.log 2>&1 &"
 echo "✓ 指标收集器已启动"
 
 # 4. 等待数据生成完成

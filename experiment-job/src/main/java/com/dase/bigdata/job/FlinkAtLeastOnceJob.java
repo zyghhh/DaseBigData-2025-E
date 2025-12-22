@@ -74,7 +74,7 @@ public class FlinkAtLeastOnceJob {
         // 6. 构建数据流
         env.fromSource(source, WatermarkStrategy.noWatermarks(), "Kafka Source")
            .map(new ProcessMapFunction())
-           .name("Business Logic (2ms delay)")
+           .name("Business Logic (1ms delay)")
            .sinkTo(sink)
            .name("Kafka Sink");
 
@@ -92,7 +92,7 @@ public class FlinkAtLeastOnceJob {
     }
 
     /**
-     * 业务处理函数 - 模拟2ms计算延迟
+     * 业务处理函数 - 模拟1ms计算延迟
      */
     public static class ProcessMapFunction implements MapFunction<String, String> {
         private static final Logger LOG = LoggerFactory.getLogger(ProcessMapFunction.class);
@@ -103,7 +103,7 @@ public class FlinkAtLeastOnceJob {
             try {
                 JSONObject json = JSONObject.parseObject(value);
                 
-                // [负载模拟] 强制休眠 2ms
+                // [负载模拟] 强制休眠 1ms
                 Thread.sleep(1);
                 
                 // 打上处理时间

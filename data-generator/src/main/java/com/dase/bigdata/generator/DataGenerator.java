@@ -1,12 +1,18 @@
 package com.dase.bigdata.generator;
 
 import com.alibaba.fastjson.JSONObject;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Kafka数据生成器
@@ -21,11 +27,16 @@ public class DataGenerator {
         String topic = args.length > 0 ? args[0] : "source_data";
         int speed = args.length > 1 ? Integer.parseInt(args[1]) : 1000; // QPS (每秒消息数)
         long maxMessages = args.length > 2 ? Long.parseLong(args[2]) : -1; // -1 表示无限模式，否则为固定数量
+        long durationSeconds = args.length > 3 ? Long.parseLong(args[3]) : -1; // -1 表示无限时间，否则为运行时长（秒）
+
+        // 初始化 Topic（确保 Topic 存在且有 4 个分区）
+        String bootstrapServers = "node1:9092,node2:9092,node3:9092";
+        initTopic(bootstrapServers, topic, 4, (short) 3);
 
         // 2. Kafka Producer 配置
         Properties props = new Properties();
         // [关键] 连接 Node 1, Node 2, Node 3
-        props.put("bootstrap.servers", "node1:9092,node2:9092,node3:9092");
+        props.put("bootstrap.servers", bootstrapServers);
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         
@@ -42,7 +53,8 @@ public class DataGenerator {
         LOG.info("Data Generator Started");
         LOG.info("Target Topic: {}", topic);
         LOG.info("Target Speed: {} msg/s", speed);
-        LOG.info("Max Messages: {}", maxMessages == -1 ? "Unlimited (Continuous Mode)" : maxMessages);
+        LOG.info("Max Messages: {}", maxMessages == -1 ? "Unlimited" : maxMessages);
+        LOG.info("Duration: {}", durationSeconds == -1 ? "Unlimited" : durationSeconds + "s");
         LOG.info("Kafka Brokers: node1:9092,node2:9092,node3:9092");
         LOG.info("====================================");
 
@@ -66,6 +78,16 @@ public class DataGenerator {
                     if (maxMessages > 0 && totalSent >= maxMessages) {
                         LOG.info("Reached max messages limit: {}", maxMessages);
                         LOG.info("Total sent: {}, Running time: {}s", totalSent, (System.currentTimeMillis() - startTime) / 1000);
+                        producer.flush();
+                        producer.close();
+                        return;
+                    }
+                    
+                    // [关键] 检查是否达到运行时长
+                    long runningTime = (System.currentTimeMillis() - startTime) / 1000;
+                    if (durationSeconds > 0 && runningTime >= durationSeconds) {
+                        LOG.info("Reached duration limit: {}s", durationSeconds);
+                        LOG.info("Total sent: {}, Running time: {}s", totalSent, runningTime);
                         producer.flush();
                         producer.close();
                         return;
@@ -116,6 +138,41 @@ public class DataGenerator {
             LOG.error("Generator encountered error", e);
         } finally {
             producer.close();
+        }
+    }
+
+    /**
+     * 初始化 Kafka Topic（如果不存在则创建）
+     * @param bootstrapServers Kafka 集群地址
+     * @param topicName Topic 名称
+     * @param numPartitions 分区数
+     * @param replicationFactor 副本因子
+     */
+    private static void initTopic(String bootstrapServers, String topicName, int numPartitions, short replicationFactor) {
+        Properties adminProps = new Properties();
+        adminProps.put("bootstrap.servers", bootstrapServers);
+        
+        try (AdminClient adminClient = AdminClient.create(adminProps)) {
+            // 检查 Topic 是否存在
+            ListTopicsResult listTopics = adminClient.listTopics();
+            Set<String> existingTopics = listTopics.names().get();
+            
+            if (existingTopics.contains(topicName)) {
+                LOG.info("Topic '{}' already exists, skipping creation", topicName);
+            } else {
+                // 创建 Topic
+                NewTopic newTopic = new NewTopic(topicName, numPartitions, replicationFactor);
+                adminClient.createTopics(Collections.singletonList(newTopic)).all().get();
+                LOG.info("Topic '{}' created successfully with {} partitions and replication factor {}", 
+                    topicName, numPartitions, replicationFactor);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.error("Topic initialization was interrupted", e);
+            throw new RuntimeException("Failed to initialize topic", e);
+        } catch (ExecutionException e) {
+            LOG.error("Failed to initialize topic '{}'", topicName, e);
+            throw new RuntimeException("Failed to initialize topic", e);
         }
     }
 

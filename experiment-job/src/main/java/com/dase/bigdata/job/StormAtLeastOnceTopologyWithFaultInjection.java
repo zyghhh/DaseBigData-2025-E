@@ -27,9 +27,9 @@ import java.util.Random;
  * Storm At-Least-Once 异常注入测试拓扑
  * 
  * 核心配置（隔离部署）：
- * - Spout → Worker 1 (并发=1)
- * - Process Bolt → Worker 2 (并发=1)
- * - Sink Bolt → Worker 3 (并发=1)
+ * - Spout → Worker 1 (并发=4)
+ * - Process Bolt → Worker 2 (并发=4)
+ * - Sink Bolt → Worker 3 (并发=4)
  * - Acker → Worker 4 (并发=1)
  * - spout.max.pending: 可配置（用于测试重复率）
  * 
@@ -61,15 +61,15 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         // 2. 构建拓扑
         TopologyBuilder builder = new TopologyBuilder();
 
-        // [资源分配] Spout 并发=1
-        builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 1);
+        // [资源分配] Spout 并发=4
+        builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 4);
 
-        // [资源分配] Process Bolt 并发=1
-        builder.setBolt("process-bolt", new ProcessBoltWithFaultInjection(), 1)
+        // [资源分配] Process Bolt 并发=4
+        builder.setBolt("process-bolt", new ProcessBoltWithFaultInjection(), 4)
                .shuffleGrouping("kafka-spout");
         
-        // [资源分配] Sink Bolt 并发=1（独立 Worker 3）
-        builder.setBolt("sink-bolt", new KafkaSinkBolt(), 1)
+        // [资源分配] Sink Bolt 并发=4（独立 Worker 3）
+        builder.setBolt("sink-bolt", new KafkaSinkBolt(), 4)
                .shuffleGrouping("process-bolt");
 
         // 3. 拓扑配置
@@ -92,9 +92,9 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         LOG.info("Storm At-Least-Once Topology (Fault Injection) Submitting...");
         LOG.info("Num Ackers: 1");
         LOG.info("Num Workers: 4 (Isolated Deployment)");
-        LOG.info("Spout Parallelism: 1");
-        LOG.info("Process Bolt Parallelism: 1");
-        LOG.info("Sink Bolt Parallelism: 1");
+        LOG.info("Spout Parallelism: 4");
+        LOG.info("Process Bolt Parallelism: 4");
+        LOG.info("Sink Bolt Parallelism: 4");
         LOG.info("Spout Max Pending: {}", maxPending);
         LOG.info("Source Topic: source_data");
         LOG.info("Sink Topic: storm_sink");
@@ -161,8 +161,8 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
                     throw new RuntimeException("Injected fault before emit");
                 }
                 
-                // [负载模拟] 强制休眠 2ms
-                Thread.sleep(1);
+                // [负载模拟] 强制休眠 0.1ms
+                Thread.sleep(0, 100000);  // 0ms + 100000ns = 0.1ms
                 
                 // 打上处理时间
                 json.put("process_time", System.currentTimeMillis());

@@ -72,7 +72,8 @@ public class FlinkAtLeastOnceJobWithFaultInjection {
 
         // 4. Kafka Source 配置（使用新 API）
         Properties sourceProps = new Properties();
-        sourceProps.setProperty("enable.auto.commit", "true");
+        // [实验关键] 禁用自动提交 offset（配合 Checkpoint）
+        sourceProps.setProperty("enable.auto.commit", "false");
         sourceProps.setProperty("auto.commit.interval.ms", "5000");
 
         KafkaSource<String> source = KafkaSource.<String>builder()
@@ -97,7 +98,7 @@ public class FlinkAtLeastOnceJobWithFaultInjection {
         // 6. 构建数据流（带故障注入的 MapFunction）
         env.fromSource(source, WatermarkStrategy.noWatermarks(), "Kafka Source")
            .map(new FaultInjectionMapFunction(faultType, faultRate))
-           .name("Business Logic (2ms delay + fault)")
+           .name("Business Logic (1ms delay + fault)")
            .sinkTo(sink)
            .name("Kafka Sink");
 
@@ -157,8 +158,8 @@ public class FlinkAtLeastOnceJobWithFaultInjection {
                     throw new RuntimeException("Injected fault before business logic");
                 }
 
-                // [负载模拟] 强制休眠 2ms
-                Thread.sleep(1);
+                // [负载模拟] 强制休眠 0.1ms
+                Thread.sleep(0, 100000);  // 0ms + 100000ns = 0.1ms
 
                 // 打上处理时间和标识
                 json.put("process_time", System.currentTimeMillis());

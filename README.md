@@ -128,7 +128,7 @@ chmod +x *.sh
 | Version | Storm 2.4.0 | Flink 1.14.6 |
 | Master Memory | 1024m | 1024M |
 | Slave Memory | 1.6G × 2 × 2 | 3.2G × 2 |
-| Parallelism | 1 supervisor<br>4 worker | 1 Task Manager<br>4 Task slots |
+| Parallelism | 1 supervisor<br>4 worker<br>Spout=4, Bolt=4 | 1 Task Manager<br>4 Task slots<br>全局并发=4 |
 
 ---
 
@@ -161,18 +161,18 @@ chmod +x *.sh
 
 *[2节点 4 TaskManager，消耗 6.4G]*
 
-- **Source**：从 `source_data` 读 Kafka 消息
-- **Processing**：模拟 1ms 业务延迟，打上 `process_time` 等
-- **Sink**：写入 `flink_sink` Kafka Topic
+- **Source**（并发=4）：从 `source_data` 读 Kafka 消息（4 分区）
+- **Processing**（并发=4）：模拟 1ms 业务延迟，打上 `process_time` 等
+- **Sink**（并发=4）：写入 `flink_sink` Kafka Topic
 
 #### Storm Topology 内部拓扑（逻辑组件）
 
 *[2节点 4 worker，消耗 6.4G]*
 
-- **KafkaSpout**：从 `source_data` 读 Kafka 消息
-- **ProcessBolt**：模拟 1ms 业务延迟，打上 `process_time` 等
-- **KafkaSinkBolt**：写入 `storm_sink` Kafka Topic
-- **Acker**：Storm 内部的可靠性组件（1 个 acker，独立 worker）
+- **KafkaSpout**（并发=4）：从 `source_data` 读 Kafka 消息（4 分区）
+- **ProcessBolt**（并发=4）：模拟 1ms 业务延迟，打上 `process_time` 等
+- **KafkaSinkBolt**（并发=4）：写入 `storm_sink` Kafka Topic
+- **Acker**（并发=1）：Storm 内部的可靠性组件
 
 ## 📊 实验类型
 
@@ -221,8 +221,8 @@ mysql -h node1 -u exp_user -ppassword stream_experiment \
 ./start-storm-fault-test.sh 100000 2000 1000 bolt-before 5000
 ```
 
-**参数说明:**
-- 参数1: 消息总数
+**参数说明（Data Generator）:**
+- 参数1: Topic 名称
 - 参数2: 发送速率 (msg/s)
 - 参数3: 故障类型 (Flink: before/after; Storm: bolt-before/bolt-after)
 - 参数4: Lambda（平均间隔消息数）
@@ -238,8 +238,8 @@ mysql -h node1 -u exp_user -ppassword stream_experiment \
 ```
 
 **参数说明:**
-- Flink: [消息数] [速率] [故障延迟] [故障次数] [故障间隔]
-- Storm: [消息数] [速率] [pending] [故障延迟] [故障次数] [故障间隔]
+- Data Generator: [Topic] [速率] [最大消息数] [运行时长(秒)]
+- 故障注入: [故障延迟] [故障次数] [故障间隔]
 
 ---
 
@@ -323,12 +323,12 @@ tail -f /opt/flink/log/flink-*-jobmanager-*.log
 // Checkpoint 配置
 env.enableCheckpointing(5000);  // 5秒间隔
 env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.AT_LEAST_ONCE);
-env.setParallelism(4);  // 并发度
+env.setParallelism(4);  // 并发度=4（对齐 4 个分区）
 
 // 新版 Kafka Connector（推荐）
 KafkaSource<String> source = KafkaSource.<String>builder()
     .setBootstrapServers("node1:9092,node2:9092,node3:9092")
-    .setTopics("source_data")
+    .setTopics("source_data")  // 4 分区自动创建
     .setStartingOffsets(OffsetsInitializer.earliest())
     .build();
 ```
@@ -339,7 +339,12 @@ KafkaSource<String> source = KafkaSource.<String>builder()
 // Topology 配置
 .setProcessingGuarantee(KafkaSpoutConfig.ProcessingGuarantee.AT_LEAST_ONCE);
 conf.setNumAckers(1);  // 1个 Acker
-conf.setNumWorkers(4);  // 4个 Worker（组件隔离）
+conf.setNumWorkers(4);  // 4个 Worker
+
+// 并发度配置（对齐 4 个分区）
+builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 4);  // Spout=4
+builder.setBolt("process-bolt", new ProcessBolt(), 4);  // Bolt=4
+builder.setBolt("sink-bolt", new KafkaSinkBolt(), 4);  // Sink=4
 
 // 手动 ACK/FAIL
 collector.ack(input);   // 成功处理

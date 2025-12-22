@@ -28,9 +28,9 @@ import java.util.Properties;
  * 核心配置：
  * - Acker 数量：1 (开启可靠性机制)
  * - Worker 数量：4 (物理隔离)
- * - Spout 并发：1
- * - Process Bolt 并发：1
- * - Sink Bolt 并发：1
+ * - Spout 并发：4
+ * - Process Bolt 并发：4
+ * - Sink Bolt 并发：4
  * - 业务处理延迟：1ms (模拟计算负载)
  * 
  * 部署位置：Node 1 提交
@@ -53,15 +53,15 @@ public class StormAtLeastOnceTopology {
         // 2. 构建拓扑
         TopologyBuilder builder = new TopologyBuilder();
 
-        // [资源分配] Spout 并发=1
-        builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 1);
+        // [资源分配] Spout 并发=4
+        builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 4);
 
-        // [资源分配] Process Bolt 并发=1
-        builder.setBolt("process-bolt", new ProcessBolt(), 1)
+        // [资源分配] Process Bolt 并发=4
+        builder.setBolt("process-bolt", new ProcessBolt(), 4)
                .shuffleGrouping("kafka-spout");
         
-        // [资源分配] Sink Bolt 并发=1 (写入 Kafka storm_sink)
-        builder.setBolt("sink-bolt", new KafkaSinkBolt(), 1)
+        // [资源分配] Sink Bolt 并发=4 (写入 Kafka storm_sink)
+        builder.setBolt("sink-bolt", new KafkaSinkBolt(), 4)
                .shuffleGrouping("process-bolt");
 
         // 3. 拓扑配置
@@ -83,9 +83,9 @@ public class StormAtLeastOnceTopology {
         LOG.info("Storm At-Least-Once Topology Submitting...");
         LOG.info("Num Ackers: 1");
         LOG.info("Num Workers: 4");
-        LOG.info("Spout Parallelism: 1");
-        LOG.info("Process Bolt Parallelism: 1");
-        LOG.info("Sink Bolt Parallelism: 1");
+        LOG.info("Spout Parallelism: 4");
+        LOG.info("Process Bolt Parallelism: 4");
+        LOG.info("Sink Bolt Parallelism: 4");
         LOG.info("Source Topic: source_data");
         LOG.info("Sink Topic: storm_sink");
         LOG.info("====================================");
@@ -96,7 +96,7 @@ public class StormAtLeastOnceTopology {
     }
 
     /**
-     * 处理 Bolt - 模拟2ms计算延迟
+     * 处理 Bolt - 模拟1ms计算延迟
      * 使用 BaseRichBolt 手动 ACK
      */
     public static class ProcessBolt extends BaseRichBolt {
@@ -115,8 +115,8 @@ public class StormAtLeastOnceTopology {
                 String value = input.getStringByField("value");
                 JSONObject json = JSONObject.parseObject(value);
                 
-                // [负载模拟] 强制休眠 2ms
-                Thread.sleep(1);
+                // [负载模拟] 强制休眠 0.1ms（提高吐吐量）
+                Thread.sleep(0, 100000);  // 0ms + 100000ns = 0.1ms
                 
                 // 打上处理时间
                 json.put("process_time", System.currentTimeMillis());

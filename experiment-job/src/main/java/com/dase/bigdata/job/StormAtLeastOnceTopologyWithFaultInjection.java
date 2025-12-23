@@ -125,6 +125,7 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         private boolean faultBeforeEmit = false;
         private double lambda = 10000.0;      // 泊松分布参数
         private long nextFaultAt = -1;         // 下一次故障发生的消息序号
+        private long faultInjectedMsgId = -1;  // 已注入故障的消息 ID（避免重复触发）
 
         @Override
         public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
@@ -154,10 +155,12 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
             try {
                 String value = input.getStringByField("value");
                 JSONObject json = JSONObject.parseObject(value);
+                long msgId = json.getLong("msg_id");
                 
                 // [异常注入点 1] emit 之前抛异常
-                if (faultEnabled && faultBeforeEmit && shouldInjectFault()) {
-                    LOG.warn("Injecting fault BEFORE emit for msg_id: {}", json.getLong("msg_id"));
+                if (faultEnabled && faultBeforeEmit && shouldInjectFault(msgId)) {
+                    LOG.warn("Injecting fault BEFORE emit for msg_id: {}", msgId);
+                    faultInjectedMsgId = msgId;  // 记录故障消息
                     throw new RuntimeException("Injected fault before emit");
                 }
                 
@@ -179,13 +182,21 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
                 collector.emit(input, new Values(json.toJSONString()));
                 
                 // [异常注入点 2] emit 之后抛异常
-                if (faultEnabled && !faultBeforeEmit && shouldInjectFault()) {
-                    LOG.warn("Injecting fault AFTER emit for msg_id: {}", json.getLong("msg_id"));
+                if (faultEnabled && !faultBeforeEmit && shouldInjectFault(msgId)) {
+                    LOG.warn("Injecting fault AFTER emit for msg_id: {}", msgId);
+                    faultInjectedMsgId = msgId;  // 记录故障消息
                     throw new RuntimeException("Injected fault after emit");
                 }
                 
                 // [实验关键] 手动 ACK (确保可靠性)
                 collector.ack(input);
+                
+                // ACK 成功后，更新下一个故障点
+                if (faultEnabled && processedCount >= nextFaultAt) {
+                    nextFaultAt = processedCount + generateNextFaultInterval();
+                    LOG.info("✓ Message #{} processed successfully, next fault scheduled at #{}", 
+                             processedCount, nextFaultAt);
+                }
                 
             } catch (Exception e) {
                 LOG.error("Error processing tuple: {}", e.getMessage());
@@ -196,18 +207,22 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         
         /**
          * 判断当前消息是否应该注入故障（基于泊松分布）
+         * 修复：通过 msg_id 避免同一消息重复触发故障
          */
-        private boolean shouldInjectFault() {
+        private boolean shouldInjectFault(long msgId) {
             if (!faultEnabled) {
+                return false;
+            }
+
+            // 如果是重试的消息（msg_id 相同），不再触发故障
+            if (msgId == faultInjectedMsgId) {
+                LOG.debug("Skipping fault for retry msg_id: {}", msgId);
                 return false;
             }
 
             // 检查是否到达故障点
             if (processedCount >= nextFaultAt) {
-                // 生成下一个故障点
-                nextFaultAt = processedCount + generateNextFaultInterval();
-                LOG.info("Fault triggered at message #{}, next fault scheduled at #{}", 
-                         processedCount, nextFaultAt);
+                LOG.info("⚠ Fault triggered at message #{} (msg_id: {})", processedCount, msgId);
                 return true;
             }
             return false;

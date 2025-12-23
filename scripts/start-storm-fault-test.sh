@@ -37,19 +37,19 @@ echo "✓ 数据生成器已启动（将生成 $MESSAGE_COUNT 条消息后自动
 echo "[2/4] 提交 Storm Topology（异常类型: $FAULT_TYPE）..."
 cd /opt/experiment
 
-# 根据异常类型设置 JVM 参数
+# 根据异常类型设置 JVM 参数（修复：使用环境变量传递给 Worker）
 case $FAULT_TYPE in
   spout)
-    FAULT_OPTS="-Dfault.spout.enabled=true -Dfault.lambda=$FAULT_LAMBDA"
+    export STORM_WORKER_JVM_OPTS="-Dfault.spout.enabled=true -Dfault.lambda=$FAULT_LAMBDA"
     ;;
   bolt-before)
-    FAULT_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=true -Dfault.lambda=$FAULT_LAMBDA"
+    export STORM_WORKER_JVM_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=true -Dfault.lambda=$FAULT_LAMBDA"
     ;;
   bolt-after)
-    FAULT_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=false -Dfault.lambda=$FAULT_LAMBDA"
+    export STORM_WORKER_JVM_OPTS="-Dfault.bolt.enabled=true -Dfault.bolt.before.emit=false -Dfault.lambda=$FAULT_LAMBDA"
     ;;
   none)
-    FAULT_OPTS=""
+    export STORM_WORKER_JVM_OPTS=""
     ;;
   *)
     echo "错误：未知的异常类型 $FAULT_TYPE"
@@ -57,10 +57,15 @@ case $FAULT_TYPE in
     ;;
 esac
 
+# 先 kill 已存在的 Topology（避免重复提交失败）
+echo "检查并清理旧 Topology..."
+/opt/storm/bin/storm kill Storm-FaultTest-$FAULT_TYPE -w 0 2>/dev/null || true
+sleep 5
+
 # 提交拓扑
 /opt/storm/bin/storm jar experiment-job.jar \
-  -Dspout.max.pending=$MAX_PENDING \
-  $FAULT_OPTS \
+  -c topology.max.spout.pending=$MAX_PENDING \
+  -c "topology.worker.childopts=$STORM_WORKER_JVM_OPTS" \
   com.dase.bigdata.job.StormAtLeastOnceTopologyWithFaultInjection \
   Storm-FaultTest-$FAULT_TYPE
 

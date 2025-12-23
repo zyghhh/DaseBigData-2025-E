@@ -2,15 +2,21 @@ package com.dase.bigdata.job;
 
 import com.alibaba.fastjson.JSONObject;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.storm.Config;
 import org.apache.storm.StormSubmitter;
 import org.apache.storm.kafka.spout.KafkaSpout;
 import org.apache.storm.kafka.spout.KafkaSpoutConfig;
+import org.apache.storm.spout.SpoutOutputCollector;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
+import org.apache.storm.topology.IRichSpout;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.topology.base.BaseRichBolt;
+import org.apache.storm.topology.base.BaseRichSpout;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
@@ -19,9 +25,9 @@ import org.slf4j.LoggerFactory;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 
-import java.util.Map;
-import java.util.Properties;
-import java.util.Random;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Storm At-Least-Once 异常注入测试拓扑
@@ -47,22 +53,11 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
     private static final Logger LOG = LoggerFactory.getLogger(StormAtLeastOnceTopologyWithFaultInjection.class);
 
     public static void main(String[] args) throws Exception {
-        // 1. [实验核心] Kafka Spout 配置
-        KafkaSpoutConfig<String, String> spoutConfig = KafkaSpoutConfig.builder(
-                "node1:9092,node2:9092,node3:9092", 
-                "source_data"
-            )
-            .setProp(ConsumerConfig.GROUP_ID_CONFIG, "storm-fault-test-group")
-            .setProp(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
-            // [实验关键] 开启 At-Least-Once 可靠性保证
-            .setProcessingGuarantee(KafkaSpoutConfig.ProcessingGuarantee.AT_LEAST_ONCE)
-            .build();
-
-        // 2. 构建拓扑
+        // 1. [实验核心] 构建拓扑
         TopologyBuilder builder = new TopologyBuilder();
 
-        // [资源分配] Spout 并发=4
-        builder.setSpout("kafka-spout", new KafkaSpout<>(spoutConfig), 4);
+        // [始终使用自定义 Spout，在 Worker 中读取参数决定是否注入故障]
+        builder.setSpout("kafka-spout", new KafkaSpoutWithFaultInjection(), 4);
 
         // [资源分配] Process Bolt 并发=4
         builder.setBolt("process-bolt", new ProcessBoltWithFaultInjection(), 4)
@@ -88,7 +83,7 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         // 超时设置 60s
         conf.setMessageTimeoutSecs(60);
 
-        LOG.info("====================================");
+        LOG.info("====================================" );
         LOG.info("Storm At-Least-Once Topology (Fault Injection) Submitting...");
         LOG.info("Num Ackers: 1");
         LOG.info("Num Workers: 4 (Isolated Deployment)");
@@ -98,17 +93,156 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
         LOG.info("Spout Max Pending: {}", maxPending);
         LOG.info("Source Topic: source_data");
         LOG.info("Sink Topic: storm_sink");
-        LOG.info("Fault Injection Config:");
-        LOG.info("  - Spout Fault: {}", System.getProperty("fault.spout.enabled", "false"));
-        LOG.info("  - Bolt Fault: {}", System.getProperty("fault.bolt.enabled", "false"));
-        LOG.info("  - Bolt Fault Position: {}", System.getProperty("fault.bolt.before.emit", "false").equals("true") ? "Before Emit" : "After Emit");
-        LOG.info("  - Lambda (Avg): {} messages", System.getProperty("fault.lambda", "10000"));
-        LOG.info("  - Distribution: Poisson Process (Exponential Interval)");
+        LOG.info("");
+        LOG.info("Worker JVM 参数配置（将传递给 Worker 进程）:");
+        Object workerOpts = conf.get(Config.TOPOLOGY_WORKER_CHILDOPTS);
+        if (workerOpts != null) {
+            LOG.info("  {}", workerOpts);
+        } else {
+            LOG.info("  (无自定义参数)");
+        }
+        LOG.info("");
+        LOG.info("注意: 故障注入在 Worker 启动时生效，请查看 Worker 日志确认");
         LOG.info("====================================");
 
         // 4. 提交拓扑
         String topologyName = args.length > 0 ? args[0] : "Storm-FaultInjection-Test";
         StormSubmitter.submitTopology(topologyName, conf, builder.createTopology());
+    }
+
+    /**
+     * 自定义 Kafka Spout - 支持异常注入（基于泊松分布）
+     */
+    public static class KafkaSpoutWithFaultInjection extends BaseRichSpout {
+        private static final Logger LOG = LoggerFactory.getLogger(KafkaSpoutWithFaultInjection.class);
+        
+        private SpoutOutputCollector collector;
+        private KafkaConsumer<String, String> consumer;
+        private long emittedCount = 0;
+        private Random random = new Random();
+        
+        // 异常注入配置
+        private double lambda = 10000.0;
+        private long nextFaultAt = -1;
+        
+        // 消息追踪（用于 ACK/FAIL）
+        private Map<Object, ConsumerRecord<String, String>> pendingMessages = new ConcurrentHashMap<>();
+        private long messageIdCounter = 0;
+
+        @Override
+        public void open(Map<String, Object> conf, TopologyContext context, SpoutOutputCollector collector) {
+            this.collector = collector;
+            
+            // [关键] 在 Worker 中读取 JVM 参数
+            boolean faultEnabled = Boolean.parseBoolean(System.getProperty("fault.spout.enabled", "false"));
+            this.lambda = Double.parseDouble(System.getProperty("fault.lambda", "10000"));
+            
+            if (!faultEnabled) {
+                // 禁用故障注入，设置为无限大
+                this.nextFaultAt = Long.MAX_VALUE;
+                LOG.info("KafkaSpout initialized WITHOUT fault injection");
+                LOG.info("  - Using official Kafka consumer behavior");
+            } else {
+                // 启用故障注入
+                this.nextFaultAt = generateNextFaultInterval();
+                LOG.info("KafkaSpout initialized WITH fault injection:");
+                LOG.info("  - Lambda: {}", lambda);
+                LOG.info("  - First fault at: {}", nextFaultAt);
+            }
+            
+            // 初始化 Kafka Consumer
+            Properties props = new Properties();
+            props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "node1:9092,node2:9092,node3:9092");
+            props.put(ConsumerConfig.GROUP_ID_CONFIG, "storm-fault-test-group");
+            props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+            props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
+            props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+            props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");  // 手动提交
+            
+            this.consumer = new KafkaConsumer<>(props);
+            this.consumer.subscribe(Collections.singletonList("source_data"));
+        }
+
+        @Override
+        public void nextTuple() {
+            try {
+                // 从 Kafka 拉取消息
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+                
+                for (ConsumerRecord<String, String> record : records) {
+                    // [异常注入] emit 之前抓异常
+                    if (shouldInjectFault()) {
+                        LOG.warn("⚠ Injecting fault in Spout at message #{}", emittedCount);
+                        throw new RuntimeException("Injected fault in Spout");
+                    }
+                    
+                    // 生成唯一 MessageId
+                    Long messageId = messageIdCounter++;
+                    pendingMessages.put(messageId, record);
+                    
+                    // 发射消息
+                    collector.emit(new Values(record.key(), record.value()), messageId);
+                    emittedCount++;
+                    
+                    if (emittedCount % 10000 == 0) {
+                        LOG.info("Emitted {} messages from Spout", emittedCount);
+                    }
+                }
+                
+            } catch (Exception e) {
+                LOG.error("Error in Spout nextTuple: {}", e.getMessage());
+                // Spout 异常时休眠一下，防止狂转
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        @Override
+        public void ack(Object msgId) {
+            // ACK 成功，提交 offset
+            ConsumerRecord<String, String> record = pendingMessages.remove(msgId);
+            if (record != null) {
+                consumer.commitSync();
+            }
+            
+            // 更新下一个故障点
+            if (emittedCount >= nextFaultAt) {
+                nextFaultAt = emittedCount + generateNextFaultInterval();
+                LOG.info("✓ Message ACKed, next fault at #{}", nextFaultAt);
+            }
+        }
+
+        @Override
+        public void fail(Object msgId) {
+            // FAIL 时，消息会被 Storm 自动重发
+            LOG.warn("Message FAILED in Spout, will be replayed: {}", msgId);
+            pendingMessages.remove(msgId);
+        }
+
+        @Override
+        public void declareOutputFields(OutputFieldsDeclarer declarer) {
+            declarer.declare(new Fields("key", "value"));
+        }
+        
+        private boolean shouldInjectFault() {
+            return emittedCount >= nextFaultAt;
+        }
+        
+        private long generateNextFaultInterval() {
+            double u = random.nextDouble();
+            long interval = (long) (-lambda * Math.log(u));
+            return Math.max(1, interval);
+        }
+        
+        @Override
+        public void close() {
+            if (consumer != null) {
+                consumer.close();
+            }
+        }
     }
 
     /**

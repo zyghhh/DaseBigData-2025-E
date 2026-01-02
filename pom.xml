@@ -13,9 +13,9 @@
     <description>Flink vs Storm At-Least-Once 对比实验项目</description>
 
     <modules>
-        <module>data-generator</module>
-        <module>experiment-job</module>
-        <module>metrics-collector</module>
+        <module>code/data-generator</module>
+        <module>code/experiment-job</module>
+        <module>code/metrics-collector</module>
     </modules>
 
     <properties>

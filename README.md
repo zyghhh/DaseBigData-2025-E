@@ -17,43 +17,48 @@
 DaseBigData-2025-E/
 ├── pom.xml                          # Maven 父工程
 ├── README.md                        # 项目说明（本文件）
+├── config/                          # 配置文件示例
+│   ├── database-config.example
+│   ├── hosts.example
+│   └── storm-config.yaml
 │
-├── data-generator/                  # 数据生成器模块
-│   ├── pom.xml
-│   └── src/main/java/...
-│       └── DataGenerator.java      # 可配置 QPS 与总量
-│
-├── experiment-job/                  # 计算任务模块
-│   ├── pom.xml
-│   └── src/main/java/...
-│       ├── FlinkAtLeastOnceJob.java                     # 正常版本
-│       ├── FlinkAtLeastOnceJobWithFaultInjection.java   # 故障注入版本
-│       ├── StormAtLeastOnceTopology.java                # 正常版本
-│       └── StormAtLeastOnceTopologyWithFaultInjection.java  # 故障注入版本
-│
-├── metrics-collector/               # 指标收集器模块
-│   ├── pom.xml
-│   └── src/main/java/...
-│       └── MetricsCollector.java
-│
-├── database/                        # 数据库脚本
-│   ├── init.sql                    # MySQL 初始化（含快照机制）
-│   └── init.sh                     # 自动化初始化
-│
-└── scripts/                         # 实验脚本
-    ├── cluster-flink-start.sh      # 启动 Flink 集群
-    ├── cluster-flink-stop.sh       # 停止 Flink 集群
-    ├── cluster-storm-start.sh      # 启动 Storm 集群
-    ├── cluster-storm-stop.sh       # 停止 Storm 集群
-    ├── start-flink.sh              # Flink 正常实验
-    ├── start-storm.sh              # Storm 正常实验
-    ├── start-flink-fault-test.sh   # Flink 内部故障实验
-    ├── start-storm-fault-test.sh   # Storm 内部故障实验
-    ├── start-flink-external-fault-test.sh   # Flink 外部故障实验
-    ├── start-storm-external-fault-test.sh   # Storm 外部故障实验
-    ├── stop-all.sh                 # 停止所有实验
-    ├── view-status.sh              # 查看实验状态
-    └── monitor-experiment.sh       # 持续监控
+└── code/                            # 所有实验代码
+    ├── data-generator/              # 数据生成器模块
+    │   ├── pom.xml
+    │   └── src/main/java/...
+    │       └── DataGenerator.java  # 可配置 QPS 与总量
+    │
+    ├── experiment-job/              # 计算任务模块
+    │   ├── pom.xml
+    │   └── src/main/java/...
+    │       ├── FlinkAtLeastOnceJob.java                     # 正常版本
+    │       ├── FlinkAtLeastOnceJobWithFaultInjection.java   # 故障注入版本
+    │       ├── StormAtLeastOnceTopology.java                # 正常版本
+    │       └── StormAtLeastOnceTopologyWithFaultInjection.java  # 故障注入版本
+    │
+    ├── metrics-collector/           # 指标收集器模块
+    │   ├── pom.xml
+    │   └── src/main/java/...
+    │       └── MetricsCollector.java
+    │
+    ├── database/                    # 数据库脚本
+    │   ├── init.sql                # MySQL 初始化（含快照机制）
+    │   └── init.sh                 # 自动化初始化
+    │
+    └── scripts/                     # 实验脚本
+        ├── cluster-flink-start.sh  # 启动 Flink 集群
+        ├── cluster-flink-stop.sh   # 停止 Flink 集群
+        ├── cluster-storm-start.sh  # 启动 Storm 集群
+        ├── cluster-storm-stop.sh   # 停止 Storm 集群
+        ├── start-flink.sh          # Flink 正常实验
+        ├── start-storm.sh          # Storm 正常实验
+        ├── start-flink-fault-test.sh   # Flink 内部故障实验
+        ├── start-storm-fault-test.sh   # Storm 内部故障实验
+        ├── start-flink-external-fault-test.sh   # Flink 外部故障实验
+        ├── start-storm-external-fault-test.sh   # Storm 外部故障实验
+        ├── stop-all.sh             # 停止所有实验
+        ├── view-status.sh          # 查看实验状态
+        └── monitor-experiment.sh   # 持续监控
 ```
 
 ---
@@ -85,7 +90,7 @@ mvn clean package
 
 ```bash
 # 在 Node 1 执行
-mysql -u root -p < database/init.sql
+mysql -u root -p < code/database/init.sql
 
 # 验证
 mysql -h node1 -u exp_user -ppassword stream_experiment -e "SHOW TABLES;"

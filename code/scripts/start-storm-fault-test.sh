@@ -63,11 +63,27 @@ echo "检查并清理旧 Topology..."
 sleep 5
 
 # 提交拓扑
-/opt/storm/bin/storm jar experiment-job.jar \
-  -c topology.max.spout.pending=$MAX_PENDING \
-  -c "topology.worker.childopts=$STORM_WORKER_JVM_OPTS" \
-  com.dase.bigdata.job.StormAtLeastOnceTopologyWithFaultInjection \
-  Storm-FaultTest-$FAULT_TYPE
+# 注意：Worker JVM 参数通过 topology.worker.childopts 传递
+if [ -n "$STORM_WORKER_JVM_OPTS" ]; then
+  echo "Worker JVM 参数: $STORM_WORKER_JVM_OPTS"
+  /opt/storm/bin/storm jar experiment-job.jar \
+    -c topology.max.spout.pending=$MAX_PENDING \
+    -c topology.worker.childopts="$STORM_WORKER_JVM_OPTS" \
+    com.dase.bigdata.job.StormAtLeastOnceTopologyWithFaultInjection \
+    Storm-FaultTest-$FAULT_TYPE
+else
+  echo "无故障注入参数（正常模式）"
+  /opt/storm/bin/storm jar experiment-job.jar \
+    -c topology.max.spout.pending=$MAX_PENDING \
+    com.dase.bigdata.job.StormAtLeastOnceTopologyWithFaultInjection \
+    Storm-FaultTest-$FAULT_TYPE
+fi
+
+echo ""
+echo "[提交参数验证]"
+echo "  - Max Pending: $MAX_PENDING"
+echo "  - Worker Opts: ${STORM_WORKER_JVM_OPTS:-'(none)'}"
+echo "  - Topology Name: Storm-FaultTest-$FAULT_TYPE"
 
 echo "✓ Storm Topology 已提交"
 
@@ -88,8 +104,12 @@ echo "=== 测试启动完成 ==="
 echo ""
 echo "后续操作："
 echo "1. 等待数据处理完成（建议等待 $((EXPECTED_TIME * 2)) 秒）"
-echo "2. 查看测试结果: ./view-fault-test-result.sh $FAULT_TYPE"
+echo "2. 查看测试结果: ./view-storm-fault-test-result.sh $FAULT_TYPE"
 echo "3. 停止测试: ./stop-all.sh"
+echo ""
+echo "[验证故障注入是否生效]"
+echo "  ssh node1 \"grep -i 'ProcessBolt initialized' /opt/storm/logs/workers-artifacts/Storm-FaultTest-$FAULT_TYPE/*/worker.log | tail -5\""
+echo "  ssh node1 \"grep -i 'fault' /opt/storm/logs/workers-artifacts/Storm-FaultTest-$FAULT_TYPE/*/worker.log | head -20\""
 echo ""
 
 # 可选：人工 Kill 进程测试

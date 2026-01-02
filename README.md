@@ -139,7 +139,7 @@ chmod +x *.sh
 
 ## 🏗️ 测试架构
 
-![测试流程图](image.png)
+![测试流程图](./config/image.png)
 
 ### 节点部署
 
@@ -183,11 +183,11 @@ chmod +x *.sh
 
 ### 实验矩阵
 
-| 实验类型 | Flink 脚本 | Storm 脚本 |
-|---------|-----------|-----------|
-| **正常实验** | `start-flink.sh` | `start-storm.sh` |
-| **内部故障**<br>（业务逻辑异常，泊松分布） | `start-flink-fault-test.sh` | `start-storm-fault-test.sh` |
-| **外部故障**<br>（进程 Kill，自动重启/重调度） | `start-flink-external-fault-test.sh` | `start-storm-external-fault-test.sh` |
+| 实验类型                                                | Flink 脚本                    | Storm 脚本                    |
+|-----------------------------------------------------|-----------------------------|-----------------------------|
+| **正常实验**                                            | `start-flink.sh`            | `start-storm.sh`            |
+| **内部故障**<br>（业务逻辑异常，泊松分布）                           | `start-flink-fault-test.sh` | `start-storm-fault-test.sh` |
+| **外部故障**<br>（启动基线实验，稳定运行后运行异常注入脚本：进程 Kill，自动重启/重调度） | `inject-fault-flink.sh`     | `inject-fault-storm.sh`     |
 
 ---
 

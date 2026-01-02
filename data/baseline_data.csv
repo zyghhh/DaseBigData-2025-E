@@ -1,0 +1,3 @@
+id,snapshot_time,job_type,total_messages,unique_messages,avg_latency,min_latency,max_latency,p50_latency,p95_latency,p99_latency,stddev_latency,duplicate_messages,duplicate_rate,max_process_count,total_reprocess_count,throughput_per_sec,time_window_sec,data_range_start,data_range_end,note
+60,2026-01-02 16:47:52,flink,1800000,1800000,511.98,3,8306,421.00,794.00,4255.00,723.91,0,0.0000,1,0,3040.58,592,1767342897821,1767343497722,flink-qps3000-data1800000-基线
+61,2026-01-02 17:08:49,storm,1800000,1800000,725.11,14,9475,434.00,3105.00,8111.00,1362.09,0,0.0000,1,0,3044.43,591,1767344261453,1767344861372,storm-qps3000-data1800000-基线

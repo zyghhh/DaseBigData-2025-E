@@ -69,37 +69,46 @@ public class StormAtLeastOnceTopologyWithFaultInjection {
 
         // 3. 拓扑配置
         Config conf = new Config();
-        
-        // [实验核心] 开启 Acker (1个，独立 Worker 4)
+                
+        // [实验核心] 开启 Acker (1个,独立 Worker 4)
         conf.setNumAckers(1);
-        
+                
         // [实验核心] 总 Worker 数 = 4 (Spout + Process + Sink + Acker 隔离)
         conf.setNumWorkers(4);
-        
+                
         // [实验关键] spout.max.pending 配置（用于测试重复率）
-        int maxPending = Integer.parseInt(System.getProperty("spout.max.pending", "1000"));
-        conf.put(Config.TOPOLOGY_MAX_SPOUT_PENDING, maxPending);
-        
+        // 注意：通过 storm jar -c topology.max.spout.pending=N 传入（优先级更高）
+        // 这里设置默认值，如果命令行未指定则生效
+        conf.put(Config.TOPOLOGY_MAX_SPOUT_PENDING, 1000);
+                
         // 超时设置 60s
         conf.setMessageTimeoutSecs(60);
+                
+        // [关键修复] 读取环境变量中的 Worker JVM 参数并设置到配置中
+        // 这样可以确保 Worker 进程能够获取到这些参数
+        String workerJvmOpts = System.getenv("STORM_WORKER_JVM_OPTS");
+        if (workerJvmOpts != null && !workerJvmOpts.isEmpty()) {
+            conf.put(Config.TOPOLOGY_WORKER_CHILDOPTS, workerJvmOpts);
+            LOG.info("Setting Worker JVM Options from environment: {}", workerJvmOpts);
+        }
 
-        LOG.info("====================================" );
+        LOG.info("====================================");
         LOG.info("Storm At-Least-Once Topology (Fault Injection) Submitting...");
         LOG.info("Num Ackers: 1");
         LOG.info("Num Workers: 4 (Isolated Deployment)");
         LOG.info("Spout Parallelism: 4");
         LOG.info("Process Bolt Parallelism: 4");
         LOG.info("Sink Bolt Parallelism: 4");
-        LOG.info("Spout Max Pending: {}", maxPending);
+        LOG.info("Spout Max Pending (Default): 1000 (can be overridden by -c topology.max.spout.pending=N)");
         LOG.info("Source Topic: source_data");
         LOG.info("Sink Topic: storm_sink");
         LOG.info("");
-        LOG.info("Worker JVM 参数配置（将传递给 Worker 进程）:");
-        Object workerOpts = conf.get(Config.TOPOLOGY_WORKER_CHILDOPTS);
-        if (workerOpts != null) {
-            LOG.info("  {}", workerOpts);
+        LOG.info("Worker JVM 参数配置：");
+        Object workerOptsFromConf = conf.get(Config.TOPOLOGY_WORKER_CHILDOPTS);
+        if (workerOptsFromConf != null) {
+            LOG.info("  ✅ 配置已设置: {}", workerOptsFromConf);
         } else {
-            LOG.info("  (无自定义参数)");
+            LOG.info("  ⚠️ 无自定义参数（正常模式）");
         }
         LOG.info("");
         LOG.info("注意: 故障注入在 Worker 启动时生效，请查看 Worker 日志确认");

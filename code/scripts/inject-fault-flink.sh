@@ -373,9 +373,36 @@ for i in $(seq 1 $REPEAT_TIMES); do
                 echo "  恢复后可用 Slots: $FINAL_SLOTS"
                 
                 if [ "$FINAL_SLOTS" -eq 0 ] || [ -z "$FINAL_SLOTS" ]; then
-                    echo -e "${YELLOW}⚠ Slots 未恢复，Standalone 模式可能需要手动重启 TaskManager${NC}"
-                    echo "  手动重启: ssh $TARGET_NODE '/opt/flink/bin/taskmanager.sh restart'"
-                    ssh $TARGET_NODE '/opt/flink/bin/taskmanager.sh start'
+                    echo -e "${YELLOW}⚠ Slots 未恢复，Standalone 模式需要重启 TaskManager${NC}"
+                    
+                    # 清理所有可能残留的 TaskManager 进程
+                    echo "清理 $TARGET_NODE 上所有 TaskManager 进程..."
+                    REMAINING_TM=$(ssh $TARGET_NODE "jps | grep TaskManagerRunner | awk '{print \$1}'" 2>/dev/null)
+                    if [ -n "$REMAINING_TM" ]; then
+                        for pid in $REMAINING_TM; do
+                            echo "  清理残留进程: $pid"
+                            ssh $TARGET_NODE "kill -9 $pid" 2>/dev/null
+                        done
+                        sleep 2
+                    fi
+                    
+                    # 启动新的 TaskManager
+                    echo "启动新的 TaskManager..."
+                    ssh $TARGET_NODE "nohup /opt/flink/bin/taskmanager.sh start > /dev/null 2>&1 &"
+                    
+                    # 等待启动完成
+                    echo "等待 TaskManager 进程启动（约 8 秒）..."
+                    sleep 8
+                    
+                    # 验证是否重启成功
+                    NEW_TM_COUNT=$(ssh $TARGET_NODE "jps | grep TaskManagerRunner | wc -l")
+                    if [ $NEW_TM_COUNT -eq 1 ]; then
+                        echo -e "${GREEN}✓ $TARGET_NODE 上的 TaskManager 已成功重启（仅1个进程）${NC}"
+                    elif [ $NEW_TM_COUNT -gt 1 ]; then
+                        echo -e "${RED}✗ 警告: 检测到 $NEW_TM_COUNT 个 TaskManager 进程，可能重复启动${NC}"
+                    else
+                        echo -e "${RED}✗ $TARGET_NODE 上的 TaskManager 重启失败，请检查日志${NC}"
+                    fi
                 fi
             else
                 echo -e "${YELLOW}⚠ 警告: 网络恢复可能失败${NC}"

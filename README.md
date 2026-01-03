@@ -787,12 +787,6 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
 - **Flink**：全局协调 + 批量恢复，Master 故障与长时间网络隔离代价极高；
 - **Storm**：去中心化处理 + 精准重试，Master 故障几乎无影响，Worker 故障在高频场景下会累积压力。
 
-**适用建议**：
-- 如果业务场景能容忍较高重复率（如通过下游幂等去重），Flink 的高吞吐更适合；
-- 如果需要严格控制重复处理成本（如金融交易），Storm 的精准重试更优；
-- 若集群稳定性高、Master 节点可靠：Flink 在正常运行时吞吐更优；
-- 若环境不稳定、频繁出现网络抖动或主节点故障：Storm 的容错韧性更强。
-
 ---
 
 #### 2. 延迟与吞吐量性能表现
@@ -810,7 +804,8 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
 - **Kill Master**：Flink P99 延迟高达 **122–129 秒**，Storm 稳定在 **11–17 秒**；Flink 吞吐量达到 **3,683–3,753 msg/s**（高于基线，由于大量重复处理），Storm 吞吐量稳定在 **3,060–3,089 msg/s**；
 - **网络隔离**：Flink P99 延迟从 91,752ms 暴涨至 **359,270ms（近 6 分钟）**，Storm 始终稳定在 **12–16 秒**；Flink 吞吐量从 3,019 msg/s **暴跌至 2,085 msg/s（下降 31%）**，Storm 始终稳定在约 **3,060 msg/s**。
 
-**At least once 的容错语义下使用建议**：
+---
+### **At least once 的容错语义下使用建议**：
 
 **(1) 稳定性优先 vs. 效率优先**
 **选择 Flink 的前提是"环境与代码的双重稳定"**：
@@ -834,7 +829,7 @@ Flink： 在理想环境下，它提供了更低的延迟和优秀的批处理�
 
 Storm： 在网络隔离、Master 宕机或代码频繁报错的极端恶劣条件下，Storm 展现了惊人的**韧性（Resilience）**，保证了业务的**连续性（Availability）**。
 
----
+
 
 #### 3. 架构设计哲学的差异
 

@@ -239,7 +239,7 @@ class ExperimentAnalyzer:
         flink_sorted = flink_df.sort_values('total_count', ascending=True)
         storm_sorted = storm_df.sort_values('total_count', ascending=True)
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(12, 8))
 
         # 绘制折线图
         x_labels = [f"{int(row['total_count'])} faults\n(every {int(row['interval'])} msgs)" 

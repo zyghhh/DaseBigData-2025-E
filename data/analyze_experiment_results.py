@@ -298,109 +298,236 @@ class ExperimentAnalyzer:
             .sort_index()
         )
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        fig, ax = plt.subplots(1, 1, figsize=(14, 8))
 
-        # Flink 延迟趋势
+        # Flink 三条线（使用实线）
         if len(flink_grouped) > 0:
-            ax1.plot(
+            ax.plot(
                 flink_grouped.index,
                 flink_grouped["avg_latency"].values,
                 "o-",
                 color="#1f77b4",
                 linewidth=2.5,
                 markersize=10,
-                label="Avg Latency",
+                label="Flink Avg",
                 markeredgecolor="white",
                 markeredgewidth=2,
             )
-            ax1.plot(
+            ax.plot(
                 flink_grouped.index,
                 flink_grouped["p95_latency"].values,
                 "s-",
                 color="#ff7f0e",
                 linewidth=2.5,
                 markersize=10,
-                label="P95 Latency",
+                label="Flink P95",
                 markeredgecolor="white",
                 markeredgewidth=2,
             )
-            ax1.plot(
+            ax.plot(
                 flink_grouped.index,
                 flink_grouped["p99_latency"].values,
                 "^-",
                 color="#2ca02c",
                 linewidth=2.5,
                 markersize=10,
-                label="P99 Latency",
+                label="Flink P99",
                 markeredgecolor="white",
                 markeredgewidth=2,
             )
 
-        ax1.set_xlabel(
-            "Fault Frequency (Total Fault Count)", fontsize=11, fontweight="bold"
-        )
-        ax1.set_ylabel("Latency (ms)", fontsize=11, fontweight="bold")
-        ax1.set_title("Flink Latency Trend", fontsize=12, fontweight="bold")
-        ax1.legend(fontsize=10, loc="upper left")
-        ax1.grid(True, alpha=0.3)
-        if len(flink_grouped) > 0:
-            ax1.set_xticks(flink_grouped.index)
-
-        # Storm 延迟趋势
+        # Storm 三条线（使用虚线区分）
         if len(storm_grouped) > 0:
-            ax2.plot(
+            ax.plot(
                 storm_grouped.index,
                 storm_grouped["avg_latency"].values,
-                "o-",
+                "o--",
                 color="#1f77b4",
                 linewidth=2.5,
                 markersize=10,
-                label="Avg Latency",
+                label="Storm Avg",
                 markeredgecolor="white",
                 markeredgewidth=2,
+                alpha=0.7,
             )
-            ax2.plot(
+            ax.plot(
                 storm_grouped.index,
                 storm_grouped["p95_latency"].values,
-                "s-",
+                "s--",
                 color="#ff7f0e",
                 linewidth=2.5,
                 markersize=10,
-                label="P95 Latency",
+                label="Storm P95",
                 markeredgecolor="white",
                 markeredgewidth=2,
+                alpha=0.7,
             )
-            ax2.plot(
+            ax.plot(
                 storm_grouped.index,
                 storm_grouped["p99_latency"].values,
-                "^-",
+                "^--",
                 color="#2ca02c",
                 linewidth=2.5,
                 markersize=10,
-                label="P99 Latency",
+                label="Storm P99",
                 markeredgecolor="white",
                 markeredgewidth=2,
+                alpha=0.7,
             )
 
-        ax2.set_xlabel(
-            "Fault Frequency (Total Fault Count)", fontsize=11, fontweight="bold"
+        ax.set_xlabel(
+            "Fault Frequency (Total Fault Count)", fontsize=12, fontweight="bold"
         )
-        ax2.set_ylabel("Latency (ms)", fontsize=11, fontweight="bold")
-        ax2.set_title("Storm Latency Trend", fontsize=12, fontweight="bold")
-        ax2.legend(fontsize=10, loc="upper left")
-        ax2.grid(True, alpha=0.3)
-        if len(storm_grouped) > 0:
-            ax2.set_xticks(storm_grouped.index)
+        ax.set_ylabel("Latency (ms)", fontsize=12, fontweight="bold")
+        ax.set_title(
+            "Internal Fault: Latency Comparison (Avg/P95/P99)\n(Higher fault count = higher frequency, Solid=Flink, Dashed=Storm)",
+            fontsize=14,
+            fontweight="bold",
+            pad=20,
+        )
+        ax.legend(fontsize=11, loc="upper left", ncol=2)
+        ax.grid(True, alpha=0.3)
+        if len(flink_grouped) > 0:
+            ax.set_xticks(flink_grouped.index)
+        plt.tight_layout()
+        plt.savefig(
+            self.output_dir / "13_internal_fault_latency_comparison.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        print(
+            f"  ✓ 保存: {self.output_dir / '13_internal_fault_latency_comparison.png'}"
+        )
+        plt.close()
+
+    def plot_internal_fault_latency_bar_chart(self):
+        """图表13b: 内部故障延迟对比（柱状图）"""
+        if not self.internal_fault_data:
+            return
+
+        print("\n📈 生成图表13b: 内部故障延迟对比（柱状图）...")
+
+        flink_df = self.internal_fault_data["flink"].copy()
+        storm_df = self.internal_fault_data["storm"].copy()
+
+        flink_df["total_count"] = flink_df["note"].apply(
+            lambda x: self.extract_internal_fault_params(x)[0]
+        )
+        storm_df["total_count"] = storm_df["note"].apply(
+            lambda x: self.extract_internal_fault_params(x)[0]
+        )
+
+        # 按故障总次数分组并计算平均值
+        flink_grouped = (
+            flink_df.groupby("total_count")
+            .agg({"avg_latency": "mean", "p95_latency": "mean", "p99_latency": "mean"})
+            .sort_index()
+        )
+
+        storm_grouped = (
+            storm_df.groupby("total_count")
+            .agg({"avg_latency": "mean", "p95_latency": "mean", "p99_latency": "mean"})
+            .sort_index()
+        )
+
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
+
+        x = np.arange(len(flink_grouped))
+        width = 0.35
+
+        # 平均延迟
+        bars1 = ax1.bar(
+            x - width / 2,
+            flink_grouped["avg_latency"].values,
+            width,
+            label="Flink",
+            color="#1f77b4",
+            alpha=0.8,
+        )
+        bars2 = ax1.bar(
+            x + width / 2,
+            storm_grouped["avg_latency"].values,
+            width,
+            label="Storm",
+            color="#ff7f0e",
+            alpha=0.8,
+        )
+
+        ax1.set_xlabel("Fault Frequency (Total Count)", fontsize=11, fontweight="bold")
+        ax1.set_ylabel("Avg Latency (ms)", fontsize=11, fontweight="bold")
+        ax1.set_title("Average Latency Comparison", fontsize=12, fontweight="bold")
+        ax1.set_xticks(x)
+        ax1.set_xticklabels([int(idx) for idx in flink_grouped.index])
+        ax1.legend(fontsize=10)
+        ax1.grid(axis="y", alpha=0.3)
+
+        # P95延迟
+        bars3 = ax2.bar(
+            x - width / 2,
+            flink_grouped["p95_latency"].values,
+            width,
+            label="Flink",
+            color="#1f77b4",
+            alpha=0.8,
+        )
+        bars4 = ax2.bar(
+            x + width / 2,
+            storm_grouped["p95_latency"].values,
+            width,
+            label="Storm",
+            color="#ff7f0e",
+            alpha=0.8,
+        )
+
+        ax2.set_xlabel("Fault Frequency (Total Count)", fontsize=11, fontweight="bold")
+        ax2.set_ylabel("P95 Latency (ms)", fontsize=11, fontweight="bold")
+        ax2.set_title("P95 Latency Comparison", fontsize=12, fontweight="bold")
+        ax2.set_xticks(x)
+        ax2.set_xticklabels([int(idx) for idx in flink_grouped.index])
+        ax2.legend(fontsize=10)
+        ax2.grid(axis="y", alpha=0.3)
+
+        # P99延迟
+        bars5 = ax3.bar(
+            x - width / 2,
+            flink_grouped["p99_latency"].values,
+            width,
+            label="Flink",
+            color="#1f77b4",
+            alpha=0.8,
+        )
+        bars6 = ax3.bar(
+            x + width / 2,
+            storm_grouped["p99_latency"].values,
+            width,
+            label="Storm",
+            color="#ff7f0e",
+            alpha=0.8,
+        )
+
+        ax3.set_xlabel("Fault Frequency (Total Count)", fontsize=11, fontweight="bold")
+        ax3.set_ylabel("P99 Latency (ms)", fontsize=11, fontweight="bold")
+        ax3.set_title("P99 Latency Comparison", fontsize=12, fontweight="bold")
+        ax3.set_xticks(x)
+        ax3.set_xticklabels([int(idx) for idx in flink_grouped.index])
+        ax3.legend(fontsize=10)
+        ax3.grid(axis="y", alpha=0.3)
 
         plt.suptitle(
-            "Internal Fault: Latency Impact (Avg/P95/P99)\n(Higher fault count = higher frequency, every N messages inject 1 fault)",
+            "Internal Fault: Latency Impact (Bar Chart)\n(Higher fault count = higher frequency, every N messages inject 1 fault)",
             fontsize=14,
             fontweight="bold",
             y=1.02,
         )
         plt.tight_layout()
-        plt.savefig(self.output_dir / '13_internal_fault_latency_comparison.png', dpi=300, bbox_inches='tight')
-        print(f"  ✓ 保存: {self.output_dir / '13_internal_fault_latency_comparison.png'}")
+        plt.savefig(
+            self.output_dir / "13b_internal_fault_latency_bar_chart.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        print(
+            f"  ✓ 保存: {self.output_dir / '13b_internal_fault_latency_bar_chart.png'}"
+        )
         plt.close()
 
     def plot_internal_fault_throughput_comparison(self):
@@ -1136,7 +1263,8 @@ class ExperimentAnalyzer:
         self.plot_baseline_latency_comparison()
         self.plot_baseline_throughput_comparison()
         self.plot_internal_fault_duplicate_rate()            # 图3: 内部故障重复率
-        self.plot_internal_fault_latency_comparison()        # 图13: 内部故障P95/P99延迟
+        self.plot_internal_fault_latency_comparison()  # 图13: 内部故障延迟折线图
+        self.plot_internal_fault_latency_bar_chart()  # 图13b: 内部故障延迟柱状图
         self.plot_internal_fault_throughput_comparison()     # 图14: 内部故障吞吐量
         self.plot_external_fault_duplicate_rate()
         self.plot_external_fault_latency_comparison()

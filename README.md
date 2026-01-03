@@ -149,6 +149,13 @@
 | MySQL | 8.0 | 数据存储 |
 | FastJSON | 1.2.83 | JSON 处理 |
 
+
+
+#### 测试流程：
+
+<!-- 这是一张图片，ocr 内容为：DATA GENERATOR 数据生产 ID,MSG,EVENTTIME KAFKA TOPIC (DATA) 数据处理 FLINK TASK STORM TASK IDMSG,EVENTTIME,INTIME, OUTTIME KAFKA TOPIC KAFKA TOPIC (FLINK) (STORM) METRICS COLLECTOR 指标统计 TUMBLING WINDOW(5 MIN) MYSQL SUMMARY & CHART -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35294350/1765894473275-9955a468-18ec-4462-9896-9587f7eb2cd5.png)
+
 ### 实验负载
 
 #### 负载选取依据
@@ -238,7 +245,9 @@ mysql -h node1 -u exp_user -ppassword stream_experiment -e \
 - 4 个 TaskSlots 全部占用
 ![alt text](/config/image2.png)
 - MySQL `metrics` 表记录数接近 1,800,000
-
+- 关键代码
+<!-- 这是一张图片，ocr 内容为：1/2.[实验核心]开启 CHECKPOINT(5秒一次) ENV.ENABLECHECKPOINTING(5000); ENV.GETCHECKPOINTCONFIG().SETCHECKPOINTINGMODE(CHECKPOINTINGHODE.AT LEAST ONCE); //  CHECKPOINT 高级配置 ENV.GETCHECKPOINTCONFIG().SETMINPAUSEBETWEENCHECKPOINTS(500);// 两次CHECKPOINT最小间 ENV.GETCHECKPOINTCONFIG().SETCHECKPOINTTIMEOUT(6000): // CHECKPOINT起时时间60S ENV.GETCHECKPOINTCONFIG().SETMAXCONCURRENTCHECKPOINTS(1); // 同时最多1个CHECKPOINT 1/3.[资源对齐]保持并发度与SLOT 一致  YOU, 3 DAYS AGO INIT ENV.SETPARALLELISM -->
+![](https://cdn.nlark.com/yuque/0/2025/png/35294350/1765904526864-0afcd37d-e64d-4888-974d-873969535002.png)
 ##### Storm 基线实验
 
 ```bash
@@ -621,7 +630,7 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
 **分析**：
 
 - **延迟对比**：
-  - Flink 平均延迟低于 Storm（512ms vs 725ms），但 P99 延迟更稳定（4,255ms vs 8,111ms）；
+  - Flink 平均延迟低于 Storm（512ms vs 725ms），P99 延迟几乎相当于Storm的一半；
   - Flink 的微批处理与 Checkpoint 机制虽引入额外开销，但在长尾延迟控制上表现更好。
 
 - **吞吐量对比**：
@@ -668,8 +677,7 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
 
 **图表**：
 ![alt text](data/figures/14_internal_fault_throughput_comparison.png)
-![alt text](data/figures/13_internal_fault_latency_comparison.png)
-
+![alt text](data/figures/13b_internal_fault_latency_bar_chart.png)
 ##### 3.3 外部故障场景性能变化
 
 **Kill Worker 故障（1–4 次）**

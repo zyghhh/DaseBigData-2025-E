@@ -541,24 +541,24 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
 
 实验负载：总消息数：300000；QPS:3000
 
-| 故障参数 (总次数/消息间隔) | Flink 重复率 | Storm 重复率 | Flink 吞吐量 (msg/s) | Storm 吞吐量 (msg/s) |
-|---------------------------|---------------|---------------|------------------------|------------------------|
-| 100 / 3000                | **80.10%**    | 0.50%         | 573.93                 | **3521.42**            |
-| 150 / 2000                | **80.90%**    | 0.33%         | 721.81                 | **3514.12**            |
-| 200 / 1500                | **86.63%**    | 0.17%         | 402.95                 | **3487.12**            |
+| 故障参数 (总次数/消息间隔) | Flink 重复率 | Storm 重复率 |
+|---------------------------|---------------|---------------|
+| 100 / 3000                | **80.10%**    | 0.50%          |
+| 150 / 2000                | **80.90%**    | 0.33%        |
+| 200 / 1500                | **86.63%**    | 0.17%                  |
 
 **关键发现**：
 
-- **Flink 重复率在内部故障场景中极高，且故障频率越高重复率与吞吐量退化越明显**：
-  - 例如：100/3000、150/2000、200/1500 三组实验中，Flink 重复率分别约为 80.10%、80.90%、86.63%，吞吐量从 721.81 msg/s 进一步下降到 402.95 msg/s；
-  - 原因：Checkpoint 间隔为 5 秒，故障时回滚到最近一次 Checkpoint，导致 5 秒内的所有数据被整体重放，故障越频繁，回滚次数越多，可用算力越少。
+- **Flink 重复率在内部故障场景中极高**：
+  - 例如：100/3000、150/2000、200/1500 三组实验中，Flink 重复率分别约为 80.10%、80.90%、86.63%；
+  - 原因：Checkpoint 间隔为 5 秒，故障时回滚到最近一次 Checkpoint，导致 5 秒内的所有数据被整体重放，故障越频繁，回滚次数越多。
 
-- **Storm 重复率始终保持极低，且吞吐量几乎不受影响**：
+- **Storm 重复率始终保持极低**：
   - 在相同三组参数下，Storm 重复率仅为 0.50%、0.33%、0.17%，吞吐量稳定在约 3,500 msg/s；
   - 原因：Tuple Tree + Acker 机制仅重发 **未被 Ack 的单条消息**，其他消息不受影响，故障频率升高主要带来的是个别 Tuple 的重试，而不是大批数据重放。
 
-**图表**：内部故障的完整重复率/吞吐量趋势，详见自动生成的图表 `03_internal_fault_duplicate_rate.png` 和 `14_internal_fault_throughput_comparison.png`。
-
+**图表**：
+![alt text](data/figures/03_internal_fault_duplicate_rate.png)
 ##### 2.3 外部故障实验（进程 Kill）
 
 **Kill Worker 故障**：
@@ -605,6 +605,8 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
   - Storm 重复率始终 < 1%；
   - 原因：网络隔离导致 Flink TaskManager 心跳超时，触发全局 Checkpoint 回滚；而 Storm 的 Tuple Tree 机制允许单个 Worker 暂时失联后快速重连，仅重发少量未 Ack 消息。
 
+**图表**：
+![alt text](data/figures/08_external_fault_duplicate_rate_by_count.png)
 ---
 
 #### 3. 延迟与吞吐量性能分析
@@ -624,6 +626,10 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
 
 - **吞吐量对比**：
   - 两者在基线场景下吞吐量基本持平（约 3,040 msg/s），均能稳定支撑设计目标。
+
+**图表**：
+![alt text](data/figures/01_baseline_latency_comparison.png)
+![alt text](data/figures/02_baseline_throughput_comparison.png)
 
 ##### 3.2 内部故障场景性能变化
 
@@ -659,6 +665,10 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
   - 平均延迟仅从 725ms 微升至 **12–21 秒**，P99 延迟始终保持在 **22–31 秒**范围内；
   - 吞吐量稳定在 **3,487–3,521 msg/s**（仅下降约 2%）；
   - Bolt 异常只影响单个 Tuple，精准重试机制避免了无效重复，整体性能波动极小。
+
+**图表**：
+![alt text](data/figures/14_internal_fault_throughput_comparison.png)
+![alt text](data/figures/13_internal_fault_latency_comparison.png)
 
 ##### 3.3 外部故障场景性能变化
 
@@ -737,6 +747,12 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
   - Storm 始终稳定在约 **3,060 msg/s**，波动不超过 1%。
 
 - **原因**：网络隔离导致 Flink TaskManager 心跳超时，触发全局 Checkpoint 回滚，隔离时间越长积压越严重，延迟与吞吐量同步崩溃；Storm 的 Tuple Tree 机制允许单个 Worker 暂时失联后快速重连，仅重发少量未 Ack 消息，对整体性能几乎无影响。
+
+**图表**：
+![alt text](data/figures/11_external_fault_avg_latency_by_count.png)
+![alt text](data/figures/09_external_fault_p95_latency_by_count.png)
+![alt text](data/figures/10_external_fault_p99_latency_by_count.png)
+![alt text](data/figures/12_external_fault_throughput_by_count.png)
 
 ---
 

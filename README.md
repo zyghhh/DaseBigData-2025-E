@@ -152,9 +152,7 @@
 
 
 #### 测试流程：
-
-<!-- 这是一张图片，ocr 内容为：DATA GENERATOR 数据生产 ID,MSG,EVENTTIME KAFKA TOPIC (DATA) 数据处理 FLINK TASK STORM TASK IDMSG,EVENTTIME,INTIME, OUTTIME KAFKA TOPIC KAFKA TOPIC (FLINK) (STORM) METRICS COLLECTOR 指标统计 TUMBLING WINDOW(5 MIN) MYSQL SUMMARY & CHART -->
-![](https://cdn.nlark.com/yuque/0/2025/png/35294350/1765894473275-9955a468-18ec-4462-9896-9587f7eb2cd5.png)
+![alt text](config/image.png)
 
 ### 实验负载
 
@@ -676,7 +674,7 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
   - Bolt 异常只影响单个 Tuple，精准重试机制避免了无效重复，整体性能波动极小。
 
 **图表**：
-![alt text](data/figures/14_internal_fault_throughput_comparison.png)
+![alt text](data/figures/14b_internal_fault_throughput_comparison.png)
 ![alt text](data/figures/13b_internal_fault_latency_bar_chart.png)
 ##### 3.3 外部故障场景性能变化
 

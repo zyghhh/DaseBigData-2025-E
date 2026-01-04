@@ -401,11 +401,11 @@ class ExperimentAnalyzer:
         plt.close()
 
     def plot_internal_fault_latency_bar_chart(self):
-        """图表13b: 内部故障延迟对比（柱状图）"""
+        """图表13b: 内部故障延迟对比（折线图，包含基线数据）"""
         if not self.internal_fault_data:
             return
 
-        print("\n📈 生成图表13b: 内部故障延迟对比（柱状图）...")
+        print("\n📈 生成图表13b: 内部故障延迟对比（折线图，包含基线数据）...")
 
         flink_df = self.internal_fault_data["flink"].copy()
         storm_df = self.internal_fault_data["storm"].copy()
@@ -430,91 +430,145 @@ class ExperimentAnalyzer:
             .sort_index()
         )
 
+        # 添加基线数据（0次故障）
+        if self.baseline_data is not None:
+            flink_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "flink"
+            ].iloc[0]
+            storm_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "storm"
+            ].iloc[0]
+
+            # 将基线数据插入到索引0位置
+            flink_baseline_row = pd.DataFrame(
+                {
+                    "avg_latency": [flink_baseline["avg_latency"]],
+                    "p95_latency": [flink_baseline["p95_latency"]],
+                    "p99_latency": [flink_baseline["p99_latency"]],
+                },
+                index=[0],
+            )
+
+            storm_baseline_row = pd.DataFrame(
+                {
+                    "avg_latency": [storm_baseline["avg_latency"]],
+                    "p95_latency": [storm_baseline["p95_latency"]],
+                    "p99_latency": [storm_baseline["p99_latency"]],
+                },
+                index=[0],
+            )
+
+            flink_grouped = pd.concat([flink_baseline_row, flink_grouped])
+            storm_grouped = pd.concat([storm_baseline_row, storm_grouped])
+
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
 
-        x = np.arange(len(flink_grouped))
-        width = 0.35
+        x_indices = flink_grouped.index.values
 
-        # 平均延迟
-        bars1 = ax1.bar(
-            x - width / 2,
+        # 平均延迟折线图
+        ax1.plot(
+            x_indices,
             flink_grouped["avg_latency"].values,
-            width,
-            label="Flink",
+            "o-",
             color="#1f77b4",
-            alpha=0.8,
+            linewidth=2.5,
+            markersize=10,
+            label="Flink",
+            markeredgecolor="white",
+            markeredgewidth=2,
         )
-        bars2 = ax1.bar(
-            x + width / 2,
+        ax1.plot(
+            x_indices,
             storm_grouped["avg_latency"].values,
-            width,
-            label="Storm",
+            "s-",
             color="#ff7f0e",
-            alpha=0.8,
+            linewidth=2.5,
+            markersize=10,
+            label="Storm",
+            markeredgecolor="white",
+            markeredgewidth=2,
         )
 
-        ax1.set_xlabel("Fault Frequency (Total Count)", fontsize=11, fontweight="bold")
+        ax1.set_xlabel(
+            "Fault Frequency (Total Count, 0=Baseline)", fontsize=11, fontweight="bold"
+        )
         ax1.set_ylabel("Avg Latency (ms)", fontsize=11, fontweight="bold")
         ax1.set_title("Average Latency Comparison", fontsize=12, fontweight="bold")
-        ax1.set_xticks(x)
-        ax1.set_xticklabels([int(idx) for idx in flink_grouped.index])
+        ax1.set_xticks(x_indices)
+        ax1.set_xticklabels([int(idx) for idx in x_indices])
         ax1.legend(fontsize=10)
-        ax1.grid(axis="y", alpha=0.3)
+        ax1.grid(True, alpha=0.3)
 
-        # P95延迟
-        bars3 = ax2.bar(
-            x - width / 2,
+        # P95延迟折线图
+        ax2.plot(
+            x_indices,
             flink_grouped["p95_latency"].values,
-            width,
-            label="Flink",
+            "o-",
             color="#1f77b4",
-            alpha=0.8,
+            linewidth=2.5,
+            markersize=10,
+            label="Flink",
+            markeredgecolor="white",
+            markeredgewidth=2,
         )
-        bars4 = ax2.bar(
-            x + width / 2,
+        ax2.plot(
+            x_indices,
             storm_grouped["p95_latency"].values,
-            width,
-            label="Storm",
+            "s-",
             color="#ff7f0e",
-            alpha=0.8,
+            linewidth=2.5,
+            markersize=10,
+            label="Storm",
+            markeredgecolor="white",
+            markeredgewidth=2,
         )
 
-        ax2.set_xlabel("Fault Frequency (Total Count)", fontsize=11, fontweight="bold")
+        ax2.set_xlabel(
+            "Fault Frequency (Total Count, 0=Baseline)", fontsize=11, fontweight="bold"
+        )
         ax2.set_ylabel("P95 Latency (ms)", fontsize=11, fontweight="bold")
         ax2.set_title("P95 Latency Comparison", fontsize=12, fontweight="bold")
-        ax2.set_xticks(x)
-        ax2.set_xticklabels([int(idx) for idx in flink_grouped.index])
+        ax2.set_xticks(x_indices)
+        ax2.set_xticklabels([int(idx) for idx in x_indices])
         ax2.legend(fontsize=10)
-        ax2.grid(axis="y", alpha=0.3)
+        ax2.grid(True, alpha=0.3)
 
-        # P99延迟
-        bars5 = ax3.bar(
-            x - width / 2,
+        # P99延迟折线图
+        ax3.plot(
+            x_indices,
             flink_grouped["p99_latency"].values,
-            width,
-            label="Flink",
+            "o-",
             color="#1f77b4",
-            alpha=0.8,
+            linewidth=2.5,
+            markersize=10,
+            label="Flink",
+            markeredgecolor="white",
+            markeredgewidth=2,
         )
-        bars6 = ax3.bar(
-            x + width / 2,
+        ax3.plot(
+            x_indices,
             storm_grouped["p99_latency"].values,
-            width,
-            label="Storm",
+            "s-",
             color="#ff7f0e",
-            alpha=0.8,
+            linewidth=2.5,
+            markersize=10,
+            label="Storm",
+            markeredgecolor="white",
+            markeredgewidth=2,
         )
 
-        ax3.set_xlabel("Fault Frequency (Total Count)", fontsize=11, fontweight="bold")
+        ax3.set_xlabel(
+            "Fault Frequency (Total Count, 0=Baseline)", fontsize=11, fontweight="bold"
+        )
         ax3.set_ylabel("P99 Latency (ms)", fontsize=11, fontweight="bold")
         ax3.set_title("P99 Latency Comparison", fontsize=12, fontweight="bold")
-        ax3.set_xticks(x)
-        ax3.set_xticklabels([int(idx) for idx in flink_grouped.index])
+        ax3.set_xticks(x_indices)
+        ax3.set_xticklabels([int(idx) for idx in x_indices])
         ax3.legend(fontsize=10)
-        ax3.grid(axis="y", alpha=0.3)
+        ax3.grid(True, alpha=0.3)
 
         plt.suptitle(
-            "Internal Fault: Latency Impact (Bar Chart)\n(Higher fault count = higher frequency, every N messages inject 1 fault)",
+            "Internal Fault: Latency Impact (Line Chart with Baseline)\n(0=Baseline, Higher fault count = higher frequency, every N messages inject 1 fault)",
             fontsize=14,
             fontweight="bold",
             y=1.02,
@@ -531,11 +585,11 @@ class ExperimentAnalyzer:
         plt.close()
 
     def plot_internal_fault_throughput_comparison(self):
-        """图衐14: 内部故障吞吐量对比（柱状图）"""
+        """图衐14: 内部故障吞吐量对比（柱状图，包含基线数据）"""
         if not self.internal_fault_data:
             return
 
-        print("\n📈 生成图衐14: 内部故障吞吐量对比...")
+        print("\n📈 生成图衐14: 内部故障吞吐量对比（包含基线数据）...")
 
         flink_df = self.internal_fault_data['flink'].copy()
         storm_df = self.internal_fault_data['storm'].copy()
@@ -543,25 +597,68 @@ class ExperimentAnalyzer:
         flink_df['total_count'] = flink_df['note'].apply(lambda x: self.extract_internal_fault_params(x)[0])
         storm_df['total_count'] = storm_df['note'].apply(lambda x: self.extract_internal_fault_params(x)[0])
 
-        flink_sorted = flink_df.sort_values('total_count', ascending=True)
-        storm_sorted = storm_df.sort_values('total_count', ascending=True)
+        # 按故障总次数分组并计算平均值
+        flink_grouped = (
+            flink_df.groupby("total_count")["throughput_per_sec"].mean().sort_index()
+        )
+        storm_grouped = (
+            storm_df.groupby("total_count")["throughput_per_sec"].mean().sort_index()
+        )
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # 添加基线数据（0次故障）
+        if self.baseline_data is not None:
+            flink_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "flink"
+            ].iloc[0]
+            storm_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "storm"
+            ].iloc[0]
 
-        x = np.arange(len(flink_sorted))
+            # 将基线数据插入到索引0位置
+            flink_baseline_series = pd.Series(
+                [flink_baseline["throughput_per_sec"]], index=[0]
+            )
+            storm_baseline_series = pd.Series(
+                [storm_baseline["throughput_per_sec"]], index=[0]
+            )
+
+            flink_grouped = pd.concat([flink_baseline_series, flink_grouped])
+            storm_grouped = pd.concat([storm_baseline_series, storm_grouped])
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        x = np.arange(len(flink_grouped))
         width = 0.35
 
-        bars1 = ax.bar(x - width/2, flink_sorted['throughput_per_sec'].values, width, 
-                      label='Flink', color=FLINK_COLOR, alpha=0.8)
-        bars2 = ax.bar(x + width/2, storm_sorted['throughput_per_sec'].values, width, 
-                      label='Storm', color=STORM_COLOR, alpha=0.8)
+        bars1 = ax.bar(
+            x - width / 2,
+            flink_grouped.values,
+            width,
+            label="Flink",
+            color=FLINK_COLOR,
+            alpha=0.8,
+        )
+        bars2 = ax.bar(
+            x + width / 2,
+            storm_grouped.values,
+            width,
+            label="Storm",
+            color=STORM_COLOR,
+            alpha=0.8,
+        )
 
-        ax.set_xlabel('Fault Frequency', fontsize=12, fontweight='bold')
+        ax.set_xlabel(
+            "Fault Frequency (Total Count, 0=Baseline)", fontsize=12, fontweight="bold"
+        )
         ax.set_ylabel('Throughput (msg/s)', fontsize=12, fontweight='bold')
-        ax.set_title('Internal Fault: Throughput Comparison\n(Higher fault count = higher frequency, every N messages inject 1 fault)', 
-                     fontsize=14, fontweight='bold', pad=20)
+        ax.set_title(
+            "Internal Fault: Throughput Comparison (with Baseline)\n(0=Baseline, Higher fault count = higher frequency, every N messages inject 1 fault)",
+            fontsize=14,
+            fontweight="bold",
+            pad=20,
+        )
         ax.set_xticks(x)
-        ax.set_xticklabels([f"{int(r['total_count'])}" for _, r in flink_sorted.iterrows()])
+        ax.set_xticklabels([int(idx) for idx in flink_grouped.index])
         ax.legend(fontsize=11)
         ax.grid(axis='y', alpha=0.3)
 
@@ -576,6 +673,129 @@ class ExperimentAnalyzer:
         plt.tight_layout()
         plt.savefig(self.output_dir / '14_internal_fault_throughput_comparison.png', dpi=300, bbox_inches='tight')
         print(f"  ✓ 保存: {self.output_dir / '14_internal_fault_throughput_comparison.png'}")
+        plt.close()
+
+    def plot_internal_fault_throughput_line_chart(self):
+        """图表14b: 内部故障吞吐量对比（折线图，包含基线数据）"""
+        if not self.internal_fault_data:
+            return
+
+        print("\n📈 生成图表14b: 内部故障吞吐量对比（折线图）...")
+
+        flink_df = self.internal_fault_data["flink"].copy()
+        storm_df = self.internal_fault_data["storm"].copy()
+
+        flink_df["total_count"] = flink_df["note"].apply(
+            lambda x: self.extract_internal_fault_params(x)[0]
+        )
+        storm_df["total_count"] = storm_df["note"].apply(
+            lambda x: self.extract_internal_fault_params(x)[0]
+        )
+
+        # 按故障总次数分组并计算平均值
+        flink_grouped = (
+            flink_df.groupby("total_count")["throughput_per_sec"].mean().sort_index()
+        )
+        storm_grouped = (
+            storm_df.groupby("total_count")["throughput_per_sec"].mean().sort_index()
+        )
+
+        # 添加基线数据（0次故障）
+        if self.baseline_data is not None:
+            flink_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "flink"
+            ].iloc[0]
+            storm_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "storm"
+            ].iloc[0]
+
+            # 将基线数据插入到索引0位置
+            flink_baseline_series = pd.Series(
+                [flink_baseline["throughput_per_sec"]], index=[0]
+            )
+            storm_baseline_series = pd.Series(
+                [storm_baseline["throughput_per_sec"]], index=[0]
+            )
+
+            flink_grouped = pd.concat([flink_baseline_series, flink_grouped])
+            storm_grouped = pd.concat([storm_baseline_series, storm_grouped])
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        x_indices = flink_grouped.index.values
+
+        # 绘制折线图
+        ax.plot(
+            x_indices,
+            flink_grouped.values,
+            "o-",
+            color=FLINK_COLOR,
+            linewidth=2.5,
+            markersize=10,
+            label="Flink",
+            markeredgecolor="white",
+            markeredgewidth=2,
+        )
+        ax.plot(
+            x_indices,
+            storm_grouped.values,
+            "s-",
+            color=STORM_COLOR,
+            linewidth=2.5,
+            markersize=10,
+            label="Storm",
+            markeredgecolor="white",
+            markeredgewidth=2,
+        )
+
+        ax.set_xlabel(
+            "Fault Frequency (Total Count, 0=Baseline)", fontsize=12, fontweight="bold"
+        )
+        ax.set_ylabel("Throughput (msg/s)", fontsize=12, fontweight="bold")
+        ax.set_title(
+            "Internal Fault: Throughput Comparison (Line Chart with Baseline)\n(0=Baseline, Higher fault count = higher frequency, every N messages inject 1 fault)",
+            fontsize=14,
+            fontweight="bold",
+            pad=20,
+        )
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels([int(idx) for idx in x_indices])
+        ax.legend(fontsize=11)
+        ax.grid(True, alpha=0.3)
+
+        # 添加数值标签
+        for x, y in zip(x_indices, flink_grouped.values):
+            ax.text(
+                x,
+                y + 50,
+                f"{y:.0f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                color=FLINK_COLOR,
+                fontweight="bold",
+            )
+        for x, y in zip(x_indices, storm_grouped.values):
+            ax.text(
+                x,
+                y - 80,
+                f"{y:.0f}",
+                ha="center",
+                va="top",
+                fontsize=9,
+                color=STORM_COLOR,
+                fontweight="bold",
+            )
+
+        plt.tight_layout()
+        plt.savefig(
+            self.output_dir / "14b_internal_fault_throughput_line_chart.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        print(
+            f"  ✓ 保存: {self.output_dir / '14b_internal_fault_throughput_line_chart.png'}"
+        )
         plt.close()
 
     def plot_external_fault_duplicate_rate(self):
@@ -837,8 +1057,32 @@ class ExperimentAnalyzer:
                                    'External Fault: Throughput vs Fault Count')
 
     def _plot_combined_latency_by_count(self):
-        """合并的外部故障延迟图表（平均/P95/P99在一张图上）"""
+        """合并的外部故障延迟图表（平均/P95/P99在一张图上，包含基线数据）"""
         fig, axes = plt.subplots(1, 3, figsize=(20, 12))
+
+        # 获取基线数据
+        flink_baseline_avg = None
+        flink_baseline_p95 = None
+        flink_baseline_p99 = None
+        storm_baseline_avg = None
+        storm_baseline_p95 = None
+        storm_baseline_p99 = None
+
+        if self.baseline_data is not None:
+            flink_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "flink"
+            ].iloc[0]
+            storm_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "storm"
+            ].iloc[0]
+
+            flink_baseline_avg = flink_baseline["avg_latency"]
+            flink_baseline_p95 = flink_baseline["p95_latency"]
+            flink_baseline_p99 = flink_baseline["p99_latency"]
+
+            storm_baseline_avg = storm_baseline["avg_latency"]
+            storm_baseline_p95 = storm_baseline["p95_latency"]
+            storm_baseline_p99 = storm_baseline["p99_latency"]
 
         for idx, (fault_type, data) in enumerate(self.external_fault_data.items()):
             ax = axes[idx]
@@ -869,6 +1113,28 @@ class ExperimentAnalyzer:
             storm_p99 = (
                 storm_df.groupby("fault_count")["p99_latency"].mean().sort_index()
             )
+
+            # 添加基线数据（0次故障）
+            if flink_baseline_avg is not None:
+                flink_avg = pd.concat(
+                    [pd.Series([flink_baseline_avg], index=[0]), flink_avg]
+                )
+                flink_p95 = pd.concat(
+                    [pd.Series([flink_baseline_p95], index=[0]), flink_p95]
+                )
+                flink_p99 = pd.concat(
+                    [pd.Series([flink_baseline_p99], index=[0]), flink_p99]
+                )
+
+                storm_avg = pd.concat(
+                    [pd.Series([storm_baseline_avg], index=[0]), storm_avg]
+                )
+                storm_p95 = pd.concat(
+                    [pd.Series([storm_baseline_p95], index=[0]), storm_p95]
+                )
+                storm_p99 = pd.concat(
+                    [pd.Series([storm_baseline_p99], index=[0]), storm_p99]
+                )
 
             # Flink 三条线（使用不同颜色和标记）
             if len(flink_avg) > 0:
@@ -949,7 +1215,7 @@ class ExperimentAnalyzer:
                     alpha=0.7,
                 )
 
-            ax.set_xlabel("Fault Count", fontsize=11, fontweight="bold")
+            ax.set_xlabel("Fault Count (0=Baseline)", fontsize=11, fontweight="bold")
             ax.set_ylabel("Latency (ms)", fontsize=11, fontweight="bold")
             ax.set_title(f"{fault_type.upper()} Fault", fontsize=12, fontweight="bold")
             ax.legend(fontsize=9, loc="upper left", ncol=2)
@@ -961,7 +1227,7 @@ class ExperimentAnalyzer:
                 ax.set_xticks(sorted(set(all_counts)))
 
         plt.suptitle(
-            "External Fault: Latency Comparison (Avg/P95/P99) vs Fault Count\n(Solid=Flink, Dashed=Storm)",
+            "External Fault: Latency Comparison (Avg/P95/P99) vs Fault Count (with Baseline)\n(0=Baseline, Solid=Flink, Dashed=Storm)",
             fontsize=14,
             fontweight="bold",
             y=1.02,
@@ -973,13 +1239,28 @@ class ExperimentAnalyzer:
             bbox_inches="tight",
         )
         print(
-            f"  \u2713 保存: {self.output_dir / '09_external_fault_latency_combined_by_count.png'}"
+            f"  ✓ 保存: {self.output_dir / '09_external_fault_latency_combined_by_count.png'}"
         )
         plt.close()
 
     def _plot_metric_by_count(self, metric_name, ylabel, filename, title):
-        """通用的按故障次数绘制指标的方法"""
+        """通用的按故障次数绘制指标的方法（包含基线数据）"""
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+        # 获取基线数据
+        flink_baseline_value = None
+        storm_baseline_value = None
+
+        if self.baseline_data is not None:
+            flink_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "flink"
+            ].iloc[0]
+            storm_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "storm"
+            ].iloc[0]
+
+            flink_baseline_value = flink_baseline[metric_name]
+            storm_baseline_value = storm_baseline[metric_name]
 
         for idx, (fault_type, data) in enumerate(self.external_fault_data.items()):
             ax = axes[idx]
@@ -991,6 +1272,15 @@ class ExperimentAnalyzer:
             storm_df = data['storm'].copy()
             storm_df['fault_count'] = storm_df['note'].apply(self.extract_fault_count)
             storm_grouped = storm_df.groupby('fault_count')[metric_name].mean().sort_index()
+
+            # 添加基线数据（0次故障）
+            if flink_baseline_value is not None:
+                flink_grouped = pd.concat(
+                    [pd.Series([flink_baseline_value], index=[0]), flink_grouped]
+                )
+                storm_grouped = pd.concat(
+                    [pd.Series([storm_baseline_value], index=[0]), storm_grouped]
+                )
 
             # 绘制折线图
             if len(flink_grouped) > 0:
@@ -1025,7 +1315,7 @@ class ExperimentAnalyzer:
                         ax.text(x, y - offset, f'{y:.1f}', ha='center', va='top', 
                                fontsize=9, color=STORM_COLOR, fontweight='bold')
 
-            ax.set_xlabel('Fault Count', fontsize=11, fontweight='bold')
+            ax.set_xlabel("Fault Count (0=Baseline)", fontsize=11, fontweight="bold")
             ax.set_ylabel(ylabel, fontsize=11, fontweight='bold')
             ax.set_title(f'{fault_type.upper()} Fault', fontsize=12, fontweight='bold')
             ax.legend(fontsize=10)
@@ -1043,8 +1333,12 @@ class ExperimentAnalyzer:
                 margin = y_range * 0.15
                 ax.set_ylim(y_min - margin, y_max + margin)
 
-        plt.suptitle(f'{title}\n(Extracted from note field: -X-60 format)', 
-                     fontsize=14, fontweight='bold', y=1.02)
+        plt.suptitle(
+            f"{title} (with Baseline)\n(0=Baseline, extracted from note field: -X-60 format)",
+            fontsize=14,
+            fontweight="bold",
+            y=1.02,
+        )
         plt.tight_layout()
         plt.savefig(self.output_dir / filename, dpi=300, bbox_inches='tight')
         print(f"  ✓ 保存: {self.output_dir / filename}")
@@ -1266,6 +1560,7 @@ class ExperimentAnalyzer:
         self.plot_internal_fault_latency_comparison()  # 图13: 内部故障延迟折线图
         self.plot_internal_fault_latency_bar_chart()  # 图13b: 内部故障延迟柱状图
         self.plot_internal_fault_throughput_comparison()     # 图14: 内部故障吞吐量
+        self.plot_internal_fault_throughput_line_chart()  # 图14b: 内部故障吞吐量折线图
         self.plot_external_fault_duplicate_rate()
         self.plot_external_fault_latency_comparison()
         self.plot_external_fault_throughput_degradation()

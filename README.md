@@ -674,7 +674,7 @@ SELECT * FROM v_snapshot_history ORDER BY snapshot_time DESC;
   - Bolt 异常只影响单个 Tuple，精准重试机制避免了无效重复，整体性能波动极小。
 
 **图表**：
-![alt text](data/figures/14b_internal_fault_throughput_comparison.png)
+![alt text](data/figures/14b_internal_fault_throughput_line_chart.png)
 ![alt text](data/figures/13b_internal_fault_latency_bar_chart.png)
 ##### 3.3 外部故障场景性能变化
 

@@ -1033,19 +1033,40 @@ class ExperimentAnalyzer:
         plt.close()
 
     def plot_external_fault_p95_latency_by_count(self):
-        """图表9: 外部故障延迟对比 vs 故障次数（融合平均/P95/P99）"""
+        """图表9: 外部故障P95延迟 vs 故障次数（折线图，包含基线）"""
         if not self.external_fault_data:
             return
-        print("\n📈 生成图表9: 外部故障延迟对比 vs 故障次数（融合图）...")
-        self._plot_combined_latency_by_count()
+        print("\n📈 生成图表9: 外部故障P95延迟 vs 故障次数...")
+        self._plot_single_latency_by_count(
+            "p95_latency",
+            "P95 Latency (ms)",
+            "09_external_fault_p95_latency_by_count.png",
+            "External Fault: P95 Latency vs Fault Count",
+        )
 
     def plot_external_fault_p99_latency_by_count(self):
-        """图表10: 外部故障P99延迟 vs 故障次数（折线图）- 已合并到图表9"""
-        pass  # 功能已合并到 plot_external_fault_p95_latency_by_count
+        """图表10: 外部故障P99延迟 vs 故障次数（折线图，包含基线）"""
+        if not self.external_fault_data:
+            return
+        print("\n📈 生成图表10: 外部故障P99延迟 vs 故障次数...")
+        self._plot_single_latency_by_count(
+            "p99_latency",
+            "P99 Latency (ms)",
+            "10_external_fault_p99_latency_by_count.png",
+            "External Fault: P99 Latency vs Fault Count",
+        )
 
     def plot_external_fault_avg_latency_by_count(self):
-        """图表11: 外部故障平均延迟 vs 故障次数（折线图）- 已合并到图表9"""
-        pass  # 功能已合并到 plot_external_fault_p95_latency_by_count
+        """图表11: 外部故障平均延迟 vs 故障次数（折线图，包含基线）"""
+        if not self.external_fault_data:
+            return
+        print("\n📈 生成图表11: 外部故障平均延迟 vs 故障次数...")
+        self._plot_single_latency_by_count(
+            "avg_latency",
+            "Avg Latency (ms)",
+            "11_external_fault_avg_latency_by_count.png",
+            "External Fault: Avg Latency vs Fault Count",
+        )
 
     def plot_external_fault_throughput_by_count(self):
         """图衐12: 外部故障吞吐量 vs 故障次数（折线图）"""
@@ -1241,6 +1262,143 @@ class ExperimentAnalyzer:
         print(
             f"  ✓ 保存: {self.output_dir / '09_external_fault_latency_combined_by_count.png'}"
         )
+        plt.close()
+
+    def _plot_single_latency_by_count(self, metric_name, ylabel, filename, title):
+        """单个延迟指标的按故障次数绘制（包含基线数据）"""
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+        # 获取基线数据
+        flink_baseline_value = None
+        storm_baseline_value = None
+
+        if self.baseline_data is not None:
+            flink_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "flink"
+            ].iloc[0]
+            storm_baseline = self.baseline_data[
+                self.baseline_data["job_type"] == "storm"
+            ].iloc[0]
+
+            flink_baseline_value = flink_baseline[metric_name]
+            storm_baseline_value = storm_baseline[metric_name]
+
+        for idx, (fault_type, data) in enumerate(self.external_fault_data.items()):
+            ax = axes[idx]
+
+            flink_df = data["flink"].copy()
+            flink_df["fault_count"] = flink_df["note"].apply(self.extract_fault_count)
+            flink_grouped = (
+                flink_df.groupby("fault_count")[metric_name].mean().sort_index()
+            )
+
+            storm_df = data["storm"].copy()
+            storm_df["fault_count"] = storm_df["note"].apply(self.extract_fault_count)
+            storm_grouped = (
+                storm_df.groupby("fault_count")[metric_name].mean().sort_index()
+            )
+
+            # 添加基线数据（0次故障）
+            if flink_baseline_value is not None:
+                flink_grouped = pd.concat(
+                    [pd.Series([flink_baseline_value], index=[0]), flink_grouped]
+                )
+                storm_grouped = pd.concat(
+                    [pd.Series([storm_baseline_value], index=[0]), storm_grouped]
+                )
+
+            # 绘制折线图
+            if len(flink_grouped) > 0:
+                ax.plot(
+                    flink_grouped.index,
+                    flink_grouped.values,
+                    "o-",
+                    color=FLINK_COLOR,
+                    linewidth=2.5,
+                    markersize=10,
+                    label="Flink",
+                    markeredgecolor="white",
+                    markeredgewidth=2,
+                )
+
+            if len(storm_grouped) > 0:
+                ax.plot(
+                    storm_grouped.index,
+                    storm_grouped.values,
+                    "s-",
+                    color=STORM_COLOR,
+                    linewidth=2.5,
+                    markersize=10,
+                    label="Storm",
+                    markeredgecolor="white",
+                    markeredgewidth=2,
+                )
+
+            # 计算y轴范围以确定标签偏移量
+            all_values = []
+            if len(flink_grouped) > 0:
+                all_values.extend(flink_grouped.values)
+            if len(storm_grouped) > 0:
+                all_values.extend(storm_grouped.values)
+
+            if all_values:
+                y_range = max(all_values) - min(all_values)
+                offset = y_range * 0.05  # 5%偏移量
+
+                # 添加数值标签
+                if len(flink_grouped) > 0:
+                    for x, y in zip(flink_grouped.index, flink_grouped.values):
+                        ax.text(
+                            x,
+                            y + offset,
+                            f"{y:.1f}",
+                            ha="center",
+                            va="bottom",
+                            fontsize=9,
+                            color=FLINK_COLOR,
+                            fontweight="bold",
+                        )
+
+                if len(storm_grouped) > 0:
+                    for x, y in zip(storm_grouped.index, storm_grouped.values):
+                        ax.text(
+                            x,
+                            y - offset,
+                            f"{y:.1f}",
+                            ha="center",
+                            va="top",
+                            fontsize=9,
+                            color=STORM_COLOR,
+                            fontweight="bold",
+                        )
+
+            ax.set_xlabel("Fault Count (0=Baseline)", fontsize=11, fontweight="bold")
+            ax.set_ylabel(ylabel, fontsize=11, fontweight="bold")
+            ax.set_title(f"{fault_type.upper()} Fault", fontsize=12, fontweight="bold")
+            ax.legend(fontsize=10)
+            ax.grid(True, alpha=0.3)
+
+            # 设置x轴刻度
+            if len(flink_grouped) > 0 or len(storm_grouped) > 0:
+                all_counts = list(flink_grouped.index) + list(storm_grouped.index)
+                ax.set_xticks(sorted(set(all_counts)))
+
+            # 自动调整y轴范围，留出标签空间
+            if all_values:
+                y_min = min(all_values)
+                y_max = max(all_values)
+                margin = y_range * 0.15
+                ax.set_ylim(y_min - margin, y_max + margin)
+
+        plt.suptitle(
+            f"{title} (with Baseline)\n(0=Baseline, extracted from note field: -X-60 format)",
+            fontsize=14,
+            fontweight="bold",
+            y=1.02,
+        )
+        plt.tight_layout()
+        plt.savefig(self.output_dir / filename, dpi=300, bbox_inches="tight")
+        print(f"  ✓ 保存: {self.output_dir / filename}")
         plt.close()
 
     def _plot_metric_by_count(self, metric_name, ylabel, filename, title):
